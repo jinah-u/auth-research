@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Spring Authorization Server 기술 조사 보고서</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; max-width: 860px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #1a1a1a; }
+  h1 { font-size: 1.6rem; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 1.25rem; margin-top: 3rem; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3 { font-size: 1rem; margin-top: 1.5rem; color: #333; }
+  nav { background: #f5f5f5; border: 1px solid #ddd; padding: 12px 20px; border-radius: 6px; }
+  nav ol { margin: 0; padding-left: 20px; }
+  nav li.pending { color: #999; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #1e1e1e; color: #e6e6e6; padding: 12px 16px; border-radius: 6px; overflow-x: auto; font-size: 0.85em; }
+  pre code { background: none; padding: 0; color: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 0.9em; }
+  th { background: #f5f5f5; }
+  .status-ok { color: #1a7f37; font-weight: bold; }
+  .status-warn { color: #9a6700; font-weight: bold; }
+  .refs { font-size: 0.9em; }
+  .refs a { color: #0969da; }
+  section { margin-bottom: 3rem; }
+</style>
+</head>
+<body>
+
+<h1>Spring Authorization Server 기술 조사 보고서</h1>
+<p>Boot 4.1 + MVC + MySQL + MyBatis + Redis 환경에서 Spring Authorization Server(SAS)의 커스터마이징 가능 범위를 조사한 결과입니다. 데모 프로젝트: <code>C:\2026\조사</code> (gateway / auth-server / resource-server 멀티모듈 Gradle 프로젝트).</p>
+
+<nav>
+<strong>목차</strong>
+<ol>
+  <li><a href="#env">환경 및 버전 확인 (Step 0)</a></li>
+  <li><a href="#step1">Step 1 — 항목 3: 인증/인가 방식 (토큰/세션/쿠키)</a></li>
+  <li><a href="#step2">Step 2 — 항목 2: 인증 절차 커스텀 (2FA)</a></li>
+  <li><a href="#step3">Step 3 — 항목 1: 로그인 UI 커스텀 / 외부 배치</a></li>
+  <li><a href="#step4">Step 4 — 항목 4: 로그아웃 / 토큰 만료</a></li>
+  <li><a href="#step5">Step 5 — 항목 5: refreshToken 동작 방식</a></li>
+  <li><a href="#step6">Step 6 — 항목 6: 악의적 세션 강제 종료</a></li>
+</ol>
+</nav>
+
+<section id="env">
+<h2>환경 및 버전 확인 (Step 0)</h2>
+
+<p><span class="status-ok">✔ 기동 및 토큰 발급 전체 흐름 확인 완료</span> — Boot 4.1.1 조합에서 3개 모듈이 정상 기동하고, Authorization Code(+PKCE) 플로우로 실제 토큰 발급까지 확인했습니다.</p>
+
+<h3>확인된 버전 조합</h3>
+<table>
+<tr><th>구성요소</th><th>버전</th><th>비고</th></tr>
+<tr><td>Spring Boot</td><td>4.1.1</td><td></td></tr>
+<tr><td>Spring Security</td><td>7.1.1</td><td>OAuth2 Authorization Server가 별도 <code>spring-authorization-server</code> 1.x 라인이 아니라 Security 본체(<code>spring-security-oauth2-authorization-server</code>)로 흡수됨</td></tr>
+<tr><td>Spring Boot 스타터</td><td><code>spring-boot-starter-security-oauth2-authorization-server</code></td><td>artifact 이름에 <code>security</code>가 포함되도록 변경됨(구버전 예제와 다름)</td></tr>
+<tr><td>Spring Cloud</td><td>2025.1.3 ("Oakwood")</td><td>Boot 4.1과 공식 호환</td></tr>
+<tr><td>Spring Cloud Gateway MVC</td><td><code>spring-cloud-starter-gateway-server-webmvc</code> 5.0.3</td><td>Initializr의 <code>cloud-gateway</code> 의존성 id가 이 아티팩트에 매핑됨(WebFlux 버전은 <code>cloud-gateway-reactive</code>)</td></tr>
+<tr><td>Java</td><td>21 (Corretto 21.0.3)</td><td>Gradle 9.7.1 toolchain</td></tr>
+<tr><td>Web 스타터</td><td><code>spring-boot-starter-webmvc</code></td><td>Boot 4.1부터 <code>spring-boot-starter-web</code>이 아니라 이 이름으로 변경됨</td></tr>
+</table>
+
+<h3>주요 발견</h3>
+<ul>
+  <li><strong>PKCE가 기본적으로 강제됨</strong> — <code>client_secret_basic</code>을 쓰는 confidential 클라이언트에서도 <code>code_challenge</code> 없이 <code>/oauth2/authorize</code> 요청 시 <code>invalid_request: OAuth 2.0 Parameter: code_challenge</code> 오류 발생. 별도 설정(<code>require-proof-key</code>) 없이도 최신 Spring Security가 기본으로 PKCE를 요구하는 것으로 확인됨. OAuth 2.1 권고사항 반영으로 추정.</li>
+  <li>MySQL / MyBatis / Redis는 Step 0에서 의도적으로 배제(계획대로 필요한 Step에서 점진 도입).</li>
+</ul>
+
+<h3>테스트 방법 (재현 가능한 curl 시퀀스)</h3>
+<p>로컬에서 세 모듈이 기동 중이어야 합니다: <code>./gradlew :auth-server:bootRun</code>, <code>:gateway:bootRun</code>, <code>:resource-server:bootRun</code> (포트: auth-server 9000 / gateway 18080 / resource-server 18081 — 다른 프로젝트와의 포트 충돌을 피하기 위해 8080/8081 대신 18080/18081 사용).</p>
+<p>OIDC 디스커버리 확인: <a href="http://localhost:9000/.well-known/openid-configuration" target="_blank">http://localhost:9000/.well-known/openid-configuration</a></p>
+<p>로그인 계정: <code>user</code> / <code>password</code></p>
+<pre><code># 1) PKCE code_verifier / code_challenge(S256) 생성
+VERIFIER=$(openssl rand -base64 96 | tr -d '=+/\n' | cut -c1-64)
+CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 | tr -d '=' | tr '+/' '-_')
+
+# 2) 로그인 (쿠키 저장)
+curl -c cookies.txt -b cookies.txt http://localhost:9000/login -o login.html
+CSRF=$(grep -o 'name="_csrf" type="hidden" value="[^"]*"' login.html | sed -E 's/.*value="([^"]*)"/\1/')
+curl -c cookies.txt -b cookies.txt -X POST http://localhost:9000/login \
+  --data-urlencode "username=user" --data-urlencode "password=password" \
+  --data-urlencode "_csrf=$CSRF"
+
+# 3) 인가 요청 (PKCE 포함) → 동의 화면 HTML 수신
+curl -c cookies.txt -b cookies.txt -G http://localhost:9000/oauth2/authorize \
+  --data-urlencode "response_type=code" --data-urlencode "client_id=demo-client" \
+  --data-urlencode "scope=openid profile" \
+  --data-urlencode "redirect_uri=http://127.0.0.1:18080/authorized" \
+  --data-urlencode "state=xyz123" \
+  --data-urlencode "code_challenge=$CHALLENGE" --data-urlencode "code_challenge_method=S256" \
+  -o authorize.html
+
+# 4) 동의 제출 → redirect_uri로 302, code 파라미터 획득
+STATE=$(grep -o 'name="state" value="[^"]*"' authorize.html | sed -E 's/.*value="([^"]*)"/\1/')
+curl -c cookies.txt -b cookies.txt -i -X POST http://localhost:9000/oauth2/authorize \
+  --data-urlencode "client_id=demo-client" --data-urlencode "state=$STATE" \
+  --data-urlencode "scope=profile"
+# → Location 헤더의 code= 값을 복사
+
+# 5) 토큰 교환
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/token \
+  --data-urlencode "grant_type=authorization_code" --data-urlencode "code=<위에서 복사한 code>" \
+  --data-urlencode "redirect_uri=http://127.0.0.1:18080/authorized" \
+  --data-urlencode "code_verifier=$VERIFIER"
+
+# 6) 게이트웨이 경유 리소스 접근
+curl http://localhost:18080/api/hello -H "Authorization: Bearer &lt;access_token&gt;"
+# => {"message":"hello, user"}</code></pre>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-boot/appendix/application-properties/index.html" target="_blank">Spring Boot Common Application Properties (spring.security.oauth2.authorizationserver.*)</a></li>
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/index.html" target="_blank">Spring Authorization Server 공식 레퍼런스</a></li>
+  <li><a href="https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway-server-mvc.html" target="_blank">Spring Cloud Gateway Server MVC 레퍼런스</a></li>
+</ul>
+</section>
+
+<section id="step1">
+<h2>Step 1 — 항목 3: 인증/인가 방식 (토큰 / 세션 / 쿠키)</h2>
+
+<p><span class="status-ok">✔ 확인 완료</span> — resource-server에 두 개의 <code>SecurityFilterChain</code>을 <code>@Order</code>로 나란히 두고 대조: <code>/api/**</code>는 OAuth2 Resource Server(JWT 검증), <code>/web/**</code>는 폼 로그인 + 세션 쿠키.</p>
+
+<h3>결론 요약</h3>
+<table>
+<tr><th></th><th>토큰(JWT) — <code>/api/**</code></th><th>세션-쿠키 — <code>/web/**</code></th></tr>
+<tr><td>인증 상태 저장 위치</td><td>서버에 없음 — 토큰 자체에 서명된 클레임 포함(stateless)</td><td>서버 메모리(HttpSession)에 SecurityContext 저장(stateful)</td></tr>
+<tr><td>클라이언트 전달 방식</td><td><code>Authorization: Bearer &lt;jwt&gt;</code> 헤더 — API/모바일/SPA에 적합</td><td><code>JSESSIONID</code> 쿠키 — 브라우저 전통적 폼 로그인에 적합</td></tr>
+<tr><td>인증 실패 시 동작</td><td>401 + <code>WWW-Authenticate: Bearer</code> 헤더 (리다이렉트 없음)</td><td>302 리다이렉트 → <code>/login</code> (브라우저 친화적)</td></tr>
+<tr><td>검증 방법</td><td>auth-server의 JWK로 서명 검증(issuer-uri 기반), auth-server에 매 요청마다 조회하지 않음</td><td>매 요청마다 세션 스토어 조회 필요</td></tr>
+<tr><td>만료/폐기</td><td>토큰 자체 <code>exp</code> 클레임으로 자연 만료(서버가 능동적으로 끊기 어려움 — Step 6에서 다룸)</td><td>세션을 서버에서 즉시 무효화 가능(Step 6에서 다룸)</td></tr>
+</table>
+
+<p><strong>참고:</strong> <code>/api/**</code> 체인도 기본 설정에서는 요청 시 <code>JSESSIONID</code> 쿠키를 함께 내려준다(Spring Security 기본 세션 정책 때문). 완전한 stateless를 원하면 <code>sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</code>를 명시적으로 추가해야 한다 — 이번 데모에서는 기본값을 그대로 두고 이 차이만 기록.</p>
+
+<p><strong>하이브리드 패턴(구현하지 않고 개념만 기록):</strong> 실무에서는 게이트웨이/BFF가 브라우저에는 세션 쿠키만 내려주고, 내부적으로는 그 세션에 연결된 access token을 꺼내 백엔드 API에 Bearer로 전달하는 방식(OAuth2 Client + 세션)도 흔히 쓰인다. 이번 조사 범위(6개 항목)에는 해당 항목이 없어 별도 구현은 하지 않음.</p>
+
+<h3>테스트 방법</h3>
+<pre><code># (a) 토큰 방식 — Bearer 있음/없음 비교
+curl -i http://localhost:18081/api/hello -H "Authorization: Bearer &lt;access_token&gt;"   # 200
+curl -i http://localhost:18081/api/hello                                              # 401 + WWW-Authenticate
+
+# (b) 세션 방식 — 로그인 없이 접근
+curl -i http://localhost:18081/web/hello        # 302 → /login
+
+# (b) 세션 방식 — 로그인 후 쿠키로 접근
+curl -c cookies.txt -b cookies.txt http://localhost:18081/login -o login.html
+CSRF=$(grep -o 'name="_csrf" type="hidden" value="[^"]*"' login.html | sed -E 's/.*value="([^"]*)"/\1/')
+curl -c cookies.txt -b cookies.txt -X POST http://localhost:18081/login \
+  --data-urlencode "username=user" --data-urlencode "password=password" --data-urlencode "_csrf=$CSRF"
+curl -b cookies.txt http://localhost:18081/web/hello
+# => {"message":"hello (session), user"}</code></pre>
+
+<p>직접 열어볼 수 있는 링크: <a href="http://localhost:18081/login" target="_blank">http://localhost:18081/login</a> (user/password로 로그인 후 <a href="http://localhost:18081/web/hello" target="_blank">/web/hello</a> 접근 가능)</p>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html" target="_blank">Spring Security — Session Management</a></li>
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html" target="_blank">Spring Security — OAuth2 Resource Server (JWT)</a></li>
+</ul>
+</section>
+<section id="step2">
+<h2>Step 2 — 항목 2: 인증 절차 커스텀 (2FA)</h2>
+
+<p><span class="status-ok">✔ 확인 완료</span> — <strong>가능하며, Spring Security 7.1(Boot 4.1 번들)이 공식 다단계 인증(MFA) 프레임워크를 내장하고 있어 직접 필터를 짜지 않고도 구현 가능</strong>하다. 비밀번호(1차) → OTP(2차, 문자/메일 대신 콘솔 로그로 mock) 순서로 로그인해야 보호된 리소스(OAuth2 인가 엔드포인트 포함)에 접근할 수 있도록 구성했다.</p>
+
+<h3>결론 요약</h3>
+<ul>
+  <li><code>@EnableMultiFactorAuthentication</code> + <code>http.oneTimeTokenLogin(...)</code> 조합만으로 "1차 인증 → 2차 인증(OTP)" 흐름이 구현된다. 로그인할 때마다 서버가 <code>FactorGrantedAuthority</code>(예: <code>FACTOR_PASSWORD</code>, <code>FACTOR_OTT</code>)를 세션의 Authentication에 누적시키고, 지정한 팩터가 모두 모여야 리소스 접근이 허용된다.</li>
+  <li>OTP 전송 채널(문자/메일 등)은 <code>OneTimeTokenGenerationSuccessHandler</code>를 직접 구현해 완전히 커스텀 가능 — 이번 데모는 실제 발송 대신 콘솔 로그로 mock(범위 외).</li>
+  <li>필요한 팩터가 부족하면 서버가 자동으로 "부족한 팩터" 로그인 화면으로 리다이렉트한다(<code>/login?factor.type=ott&amp;factor.reason=missing</code>) — 별도의 라우팅 코드를 작성할 필요가 없다.</li>
+</ul>
+
+<h3>주의할 점 (실제로 겪은 함정)</h3>
+<ul>
+  <li><strong><code>@EnableMultiFactorAuthentication(authorities=...)</code>를 그대로 쓰면 전역으로 적용된다.</strong> 즉 리소스 오너가 로그인하는 <code>/oauth2/authorize</code>뿐 아니라, OAuth2 클라이언트가 <code>client_secret_basic</code>(Basic Auth)로 호출하는 <code>/oauth2/token</code>까지 "두 팩터 모두 보유"를 요구하게 되어 <strong>정상적인 토큰 교환 요청이 403으로 거부</strong>되는 문제를 실제로 겪었다. 클라이언트 인증은 애초에 FactorGrantedAuthority 체계 대상이 아니기 때문이다.
+    <br>해결: <code>authorities = {}</code>로 애너테이션을 두어(필터 간 팩터 누적 메커니즘만 활성화) 전역 강제는 끄고, <code>AuthorizationManagerFactories.multiFactor().requireFactors(...).build().authenticated()</code>로 만든 <code>AuthorizationManager</code>를 <code>/oauth2/authorize</code> 경로에만 <code>.access(...)</code>로 선택 적용했다.</li>
+  <li><strong>MyBatis Spring Boot Starter 3.0.4가 Boot 4.1에서 자동으로 동작하지 않음</strong> — <code>MybatisAutoConfiguration</code>의 <code>@ConditionalOnSingleCandidate(DataSource.class)</code>가 "빈을 찾지 못함"으로 평가되어 <code>SqlSessionFactory</code>가 자동 생성되지 않았다(Boot 4.1의 재구성된 자동구성 패키지 구조와 버전이 맞지 않는 것으로 추정 — Step 0에서 우려했던 지점이 실제로 발생). <code>SqlSessionFactory</code> 빈을 직접 정의해 우회했다(<code>MyBatisConfig.java</code>).</li>
+</ul>
+
+<h3>테스트 방법 (재현 가능한 curl 시퀀스)</h3>
+<p>로그인 계정은 이제 MySQL(MyBatis) 조회로 검증된다: <code>user</code> / <code>password</code>. auth-server 콘솔 로그에서 <code>[MOCK SMS/EMAIL] OTP code for user: ...</code> 줄을 확인해 OTP 값을 얻는다.</p>
+<pre><code># 1) 1차 인증 (비밀번호)
+curl -c c.txt -b c.txt http://localhost:9000/login -o login.html
+CSRF=$(grep -o 'name="_csrf" type="hidden" value="[^"]*"' login.html | sed -E 's/.*value="([^"]*)"/\1/')
+curl -c c.txt -b c.txt -X POST http://localhost:9000/login \
+  --data-urlencode "username=user" --data-urlencode "password=password" --data-urlencode "_csrf=$CSRF"
+
+# 2) OTP 요청 (문자/메일 대신 콘솔 로그로 mock 발송)
+curl -c c.txt -b c.txt http://localhost:9000/login -o login2.html
+CSRF2=$(grep -o 'name="_csrf" type="hidden" value="[^"]*"' login2.html | sed -E 's/.*value="([^"]*)"/\1/')
+curl -c c.txt -b c.txt -X POST http://localhost:9000/ott/generate \
+  --data-urlencode "username=user" --data-urlencode "_csrf=$CSRF2"
+# => auth-server 콘솔 로그에서 OTP 값 확인
+
+# 3) 2차 인증 (OTP 제출)
+curl -c c.txt -b c.txt http://localhost:9000/login/ott -o ott.html
+CSRF3=$(grep -o 'name="_csrf" type="hidden" value="[^"]*"' ott.html | sed -E 's/.*value="([^"]*)"/\1/')
+curl -c c.txt -b c.txt -X POST http://localhost:9000/login/ott \
+  --data-urlencode "token=&lt;위에서 확인한 OTP&gt;" --data-urlencode "_csrf=$CSRF3"
+
+# 4) 이제 /oauth2/authorize 접근 가능 (두 팩터 모두 보유) — 이후 Step 0과 동일하게 토큰 교환</code></pre>
+
+<p>직접 확인 가능한 링크: <a href="http://localhost:9000/login" target="_blank">http://localhost:9000/login</a> (로그인 페이지에 비밀번호 폼과 "Request a One-Time Token" 폼이 함께 표시됨을 확인 가능)</p>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/authentication/mfa.html" target="_blank">Spring Security — Multi-Factor Authentication (공식 레퍼런스)</a></li>
+  <li><a href="https://spring.io/blog/2025/10/21/multi-factor-authentication-in-spring-security-7/" target="_blank">Multi-Factor Authentication in Spring Security 7 (공식 블로그)</a></li>
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/authentication/onetimetoken.html" target="_blank">Spring Security — One-Time Token Login</a></li>
+</ul>
+</section>
+<section id="step3">
+<h2>Step 3 — 항목 1: 로그인 UI 커스텀 / 외부 배치</h2>
+
+<p><span class="status-ok">✔ 확인 완료</span> — <strong>가능하다.</strong> auth-server(:9000)와 완전히 별도로 배포된 React 앱(:5180)에 로그인 폼을 두고, 인증되지 않은 사용자가 <code>/oauth2/authorize</code>에 접근하면 auth-server가 그 외부 URL로 리다이렉트하도록 구성했다. 로그인 성공 후에는 원래 요청(<code>/oauth2/authorize?...</code>)으로 자동 복귀한다.</p>
+
+<h3>결론 요약 — 표준 패턴인가?</h3>
+<ul>
+  <li><strong>표준 패턴(문서화된 공식 확장 지점)이다.</strong> <code>formLogin().loginPage(url)</code>은 Spring Security가 처음부터 지원하는 커스터마이징 포인트이며, <code>url</code>에 자신의 도메인이 아닌 절대 URL(외부 앱 주소)을 넣는 것도 정상 동작한다. 별도 컨트롤러나 리버스프록시가 필요 없다.</li>
+  <li>인증 자체는 여전히 <strong>OAuth2 Authorization Code(+PKCE) 흐름</strong> 그대로다 — 로그인 화면의 위치만 바뀌었을 뿐, auth-server가 세션 쿠키를 발급/검증하고 <code>/oauth2/authorize</code> → 동의 → <code>/oauth2/token</code>으로 이어지는 프로토콜은 동일하다.</li>
+  <li>이번 데모는 React가 <strong>네이티브 HTML <code>&lt;form method="POST"&gt;</code></strong>로 자격증명을 auth-server의 <code>/login</code>에 직접 제출하는 방식을 택했다. 이는 전체 페이지 이동(top-level navigation)이라 브라우저의 동일-출처 정책(CORS) 제약을 받지 않는다 — 즉 <strong>CORS 설정이 전혀 필요 없다.</strong> 대신 React 앱과 auth-server가 서로 다른 origin(:5180 vs :9000)이므로 <code>fetch</code>로 로그인을 처리하려 했다면 CORS + 쿠키(<code>credentials: 'include'</code>) + CSRF 토큰 교환까지 추가로 구성해야 했을 것이다(비표준/더 복잡한 경로).</li>
+</ul>
+
+<h3>주의할 점</h3>
+<ul>
+  <li>CSRF: 기본적으로 Spring Security는 상태 변경 요청(POST)에 CSRF 토큰을 요구한다. 외부 React 페이지는 auth-server의 세션에 바인딩된 CSRF 토큰 값을 알 방법이 없으므로(별도 origin), 이번 데모는 <code>POST /login</code>에 한해 CSRF 검증을 예외 처리했다(<code>csrf.ignoringRequestMatchers("/login")</code>). 프로덕션에서는 <code>CookieCsrfTokenRepository.withHttpOnlyFalse()</code>로 JS가 읽을 수 있는 CSRF 쿠키를 내려주고 React가 그 값을 읽어 제출하는 방식이 더 안전하지만, 이번 조사 범위(가능 여부 확인)에서는 생략했다.</li>
+  <li>이번 프로젝트는 2FA(Step 2)가 함께 켜져 있는데, <strong>1차(비밀번호) 로그인 화면만</strong> 외부로 옮겼다. 2차(OTP 제출) 화면은 여전히 auth-server가 직접 렌더링하는 기본 페이지(<code>/login/ott</code>)를 사용한다 — "로그인 UI를 외부에 둘 수 있는가"라는 질문 자체는 1차 화면만으로 충분히 답이 되므로 범위를 넘겨 2차 화면까지 옮기지 않았다.</li>
+  <li><code>formLogin().loginPage(externalUrl)</code>을 쓰면 auth-server 자신의 <code>GET /login</code> 페이지에서 비밀번호 폼이 사라진다(그 URL은 "당신이 직접 제공하는 페이지"라는 뜻이 되기 때문). 실제로 확인해보니, OTT 로그인 설정이 공유하는 <code>/login</code> 경로에는 이제 "OTP 요청" 폼만 남고 비밀번호 폼은 표시되지 않는다.</li>
+</ul>
+
+<h3>테스트 방법</h3>
+<p>브라우저에서 직접 열어볼 수 있는 링크: <a href="http://localhost:5180/login" target="_blank">http://localhost:5180/login</a> (React 로그인 폼, 기본값 user/password 채워져 있음 → Sign in 클릭 시 :9000/login으로 제출됨)</p>
+<pre><code># 1) 인증되지 않은 상태로 인가 엔드포인트 접근 -> 외부 React 앱으로 리다이렉트되는지 확인
+curl -i "http://localhost:9000/oauth2/authorize?response_type=code&client_id=demo-client&scope=openid&redirect_uri=http://127.0.0.1:18080/authorized&state=x&code_challenge=abc&code_challenge_method=S256"
+# => Location: http://localhost:5180/login
+
+# 2) React 폼이 실제로 보내는 것과 동일한 네이티브 form POST (CSRF 토큰 없음)
+curl -c c.txt -b c.txt -i -X POST http://localhost:9000/login \
+  --data-urlencode "username=user" --data-urlencode "password=password"
+# => 302, Location: http://localhost:9000/oauth2/authorize?...&continue  (원래 요청으로 복귀)
+
+# 3) 이후 Step 2와 동일하게 OTP 요청/제출 -> /oauth2/authorize -> /oauth2/token</code></pre>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/authentication/passwords/form.html" target="_blank">Spring Security — Form Login (loginPage 커스터마이징)</a></li>
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html" target="_blank">Spring Security — CSRF (SPA 연동 시 쿠키 기반 토큰 저장소)</a></li>
+</ul>
+</section>
+<section id="step4">
+<h2>Step 4 — 항목 4: 로그아웃 / 토큰 만료</h2>
+
+<p><span class="status-ok">✔ 확인 완료</span> — 세션 방식과 토큰 방식은 로그아웃/만료 처리 방식이 근본적으로 다르다는 것을 실제로 확인했다. 특히 <strong>토큰 revocation이 이미 발급된 JWT 자체를 무효화하지는 않는다</strong>는 점이 가장 중요한 발견이다.</p>
+
+<h3>결론 요약</h3>
+<table>
+<tr><th></th><th>세션-쿠키 방식</th><th>토큰(JWT) 방식</th></tr>
+<tr><td>로그아웃</td><td><code>POST /logout</code> → 서버가 세션을 즉시 파기. 이후 같은 쿠키로 요청하면 로그인 페이지로 리다이렉트됨(<span class="status-ok">실측 확인</span>).</td><td><code>POST /oauth2/revoke</code>는 <strong>AS 내부 저장소</strong>에서 해당 토큰의 인가 기록을 지울 뿐, 이미 발급된 JWT 자체는 서명이 유효한 한 계속 통과된다(아래 실측 참고).</td></tr>
+<tr><td>만료</td><td>세션 타임아웃(서버 설정) 시 자동 만료.</td><td><code>exp</code> 클레임으로 자체 만료. 단, Spring Security 기본 <code>JwtTimestampValidator</code>는 <strong>60초 clock-skew 유예</strong>를 두므로 <code>exp</code> 이후에도 최대 60초간 더 유효할 수 있다(아래 실측 참고).</td></tr>
+<tr><td>클라이언트가 해야 할 일</td><td>없음(쿠키 삭제는 브라우저가 처리, 서버가 실질적 무효화를 담당).</td><td>로그아웃 시 access/refresh 토큰을 <strong>클라이언트가 직접 폐기(저장소에서 삭제)</strong>해야 함. 서버의 revoke 호출만으로는 이미 배포된 JWT를 회수할 수 없기 때문.</td></tr>
+</table>
+
+<h3>실측: revocation이 JWT를 무효화하지 못함</h3>
+<pre><code># access_token revoke -> 200 OK (성공)
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/revoke \
+  --data-urlencode "token=&lt;access_token&gt;" --data-urlencode "token_type_hint=access_token"
+# => HTTP/1.1 200
+
+# 그런데 revoke 직후에도 resource-server는 여전히 이 토큰을 승인함
+curl http://localhost:18081/api/hello -H "Authorization: Bearer &lt;access_token&gt;"
+# => HTTP/1.1 200  {"message":"hello, user"}   ← 무효화되지 않음!</code></pre>
+<p><strong>원인:</strong> resource-server는 <code>spring.security.oauth2.resourceserver.jwt.issuer-uri</code>로 설정된 JWK로 서명만 로컬에서 검증하며(stateless), 매 요청마다 auth-server에 "이 토큰이 아직 유효한가"를 물어보지 않는다. Revocation은 auth-server의 <code>OAuth2AuthorizationService</code> 저장소만 갱신할 뿐이다. 즉시 무효화가 필요하면 resource-server가 로컬 JWT 검증 대신 <strong>토큰 introspection</strong>(<code>/oauth2/introspect</code>, 매 요청마다 auth-server에 조회)을 쓰거나 opaque token을 써야 한다 — 이 구현은 범위 초과라 하지 않았다(Step 6에서 세션 방식의 즉시 종료와 대비해 같은 결론을 다시 확인함).</p>
+
+<p><strong>대조:</strong> 반면 <code>refresh_token</code>은 revoke하면 실제로 막힌다 — refresh 요청은 매번 auth-server의 저장소를 조회하기 때문(stateful):</p>
+<pre><code>curl -u demo-client:secret -X POST http://localhost:9000/oauth2/revoke \
+  --data-urlencode "token=&lt;refresh_token&gt;" --data-urlencode "token_type_hint=refresh_token"
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/token \
+  --data-urlencode "grant_type=refresh_token" --data-urlencode "refresh_token=&lt;same refresh_token&gt;"
+# => {"error":"invalid_grant"}  ← 정상적으로 차단됨</code></pre>
+
+<h3>실측: 자연 만료 + 60초 clock-skew</h3>
+<p>테스트를 위해 <code>demo-client</code>의 access-token TTL을 20초로 단축(<code>application.yml</code>의 <code>token.access-token-time-to-live: PT20S</code>)한 뒤 시간을 기록하며 폴링했다.</p>
+<table>
+<tr><th>시각</th><th>경과</th><th>결과</th></tr>
+<tr><td>20:48:50</td><td>0s</td><td>토큰 발급 (<code>exp</code> = 발급+20s ≈ 20:49:10)</td></tr>
+<tr><td>20:50:07</td><td>+77s</td><td>여전히 200 (exp 이후 57초 지났지만 아직 통과 — clock-skew 유예)</td></tr>
+<tr><td>20:50:11</td><td>+81s</td><td class="status-warn">401로 전환 — 이 시점부터 거부</td></tr>
+</table>
+<p>즉 <code>exp</code>를 정확히 신뢰할 수 없고, 실제로는 <strong>exp + 약 60초</strong>까지 유효할 수 있다는 뜻이다(Spring Security <code>JwtTimestampValidator</code> 기본값). 엄격한 즉시 만료가 필요하면 <code>JwtTimestampValidator(Duration.ZERO)</code>로 skew를 0으로 좁혀야 한다.</p>
+
+<h3>실측: 세션 로그아웃</h3>
+<pre><code>curl -c c.txt -b c.txt http://localhost:18081/login -o l.html   # 로그인 폼 + CSRF
+# ... 로그인 POST ...
+curl http://localhost:18081/web/hello -b c.txt                  # 200
+curl -c c.txt -b c.txt -X POST http://localhost:18081/logout --data-urlencode "_csrf=..."
+# => 302 Location: /login?logout
+curl http://localhost:18081/web/hello -b c.txt                  # 다시 302 -> /login (세션 무효화 확인)</code></pre>
+<p><small>참고: resource-server의 <code>/web/**</code> 보안 체인 <code>securityMatcher</code>에 <code>/logout</code>을 추가해야 했다(Step 1에서 <code>/web/**</code>, <code>/login</code>만 포함하고 있었음) — 그렇지 않으면 <code>/logout</code>이 어떤 필터체인에도 매칭되지 않아 404가 발생.</small></p>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html#oauth2resourceserver-jwt-validation-clock-skew" target="_blank">Spring Security — JWT Validation (clock skew)</a></li>
+  <li><a href="https://datatracker.ietf.org/doc/html/rfc7009" target="_blank">RFC 7009 — OAuth 2.0 Token Revocation</a></li>
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/authentication/logout.html" target="_blank">Spring Security — Logout</a></li>
+</ul>
+</section>
+<section id="step5">
+<h2>Step 5 — 항목 5: refreshToken 동작 방식</h2>
+
+<p><span class="status-ok">✔ 확인 완료</span> — <code>grant_type=refresh_token</code>으로 새 access_token을 계속 발급받을 수 있으며, <strong>기본 설정에서는 refresh_token 자체가 매번 새로 교체(rotate)되지 않고 재사용된다</strong>는 것을 실측으로 확인했다.</p>
+
+<h3>결론 요약</h3>
+<ul>
+  <li>access_token을 새로 받아도 <strong>refresh_token 값은 그대로 유지</strong>된다(<code>TokenSettings.reuseRefreshTokens</code> 기본값이 <code>true</code>이기 때문). 같은 refresh_token으로 여러 번 반복해서 갱신을 요청해도 계속 성공한다.</li>
+  <li>매 갱신마다 <strong>access_token만 새로 발급</strong>되고 만료시간도 새로 연장된다(발급 시점 기준 TTL 재적용).</li>
+  <li>이 기본 동작은 보안상 트레이드오프가 있다 — refresh_token이 한 번 유출되면 그 값 자체가 무효화(rotate)되지 않으므로 탈취된 refresh_token으로 계속 access_token을 새로 받아낼 수 있다. 필요하면 클라이언트 설정에서 <code>reuse-refresh-tokens: false</code>로 바꿔 "사용할 때마다 새 refresh_token으로 교체 + 이전 것은 무효화"하는 rotation 방식으로 전환할 수 있다(이번 데모는 기본값 그대로 두고 동작 차이만 확인, 별도 구현은 하지 않음 — 범위 외).</li>
+  <li>refresh_token의 기본 TTL은 공식 문서 기준 60분이다(이번 데모에서는 access_token TTL만 20초로 단축해 테스트했고, refresh_token TTL 자체의 만료는 60분을 기다려야 해서 실측하지 않음 — 문서값 인용).</li>
+</ul>
+
+<h3>실측</h3>
+<pre><code># 1) refresh_token으로 access_token 갱신
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/token \
+  --data-urlencode "grant_type=refresh_token" --data-urlencode "refresh_token=&lt;refresh_token&gt;"
+# => 새 access_token 발급됨. 응답의 refresh_token 값은 요청에 쓴 것과 동일(rotate 안 됨)
+
+# 2) 같은 refresh_token으로 다시 한번 갱신 -> 여전히 성공(재사용 가능)
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/token \
+  --data-urlencode "grant_type=refresh_token" --data-urlencode "refresh_token=&lt;동일한 refresh_token&gt;"
+# => HTTP/1.1 200 (거부되지 않음)
+
+# 3) 새로 발급된 access_token으로 리소스 접근 확인
+curl http://localhost:18081/api/hello -H "Authorization: Bearer &lt;new access_token&gt;"
+# => 200</code></pre>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/configuration-model.html" target="_blank">Spring Security — Authorization Server 설정 모델 (TokenSettings 기본값)</a></li>
+  <li><a href="https://datatracker.ietf.org/doc/html/rfc6749#section-6" target="_blank">RFC 6749 §6 — Refreshing an Access Token</a></li>
+</ul>
+</section>
+<section id="step6">
+<h2>Step 6 — 항목 6: 악의적 사용자 세션 강제 종료</h2>
+
+<p><span class="status-ok">✔ 확인 완료</span> — <strong>결론: 세션-쿠키 방식은 서버가 즉시 강제 종료할 수 있지만, JWT(토큰) 방식은 만료 전까지 서버가 개입할 방법이 없다.</strong> 이번 Step에서 auth-server의 인가 상태를 MySQL(<code>oauth2_authorization</code> 테이블, 공식 <code>JdbcOAuth2AuthorizationService</code>)로, resource-server의 세션을 Redis(<code>spring-boot-starter-session-data-redis</code>)로 옮겨 관리자가 DB/캐시를 직접 조작해 사용자를 쫓아낼 수 있는지 실측했다.</p>
+
+<h3>결론 요약</h3>
+<table>
+<tr><th></th><th>세션-쿠키 (Redis)</th><th>토큰(JWT)</th></tr>
+<tr><td>강제 종료 방법</td><td>Redis에서 세션 키 삭제 (<code>redis-cli DEL spring:session:sessions:&lt;id&gt;</code>)</td><td>DB에서 <code>oauth2_authorization</code> 행 삭제 — 하지만 <strong>이미 발급된 access_token(JWT)에는 영향 없음</strong></td></tr>
+<tr><td>효과</td><td class="status-ok">즉시 반영 — 다음 요청부터 바로 로그인 페이지로 리다이렉트됨</td><td class="status-warn">즉시 반영 안 됨 — 만료 시각(<code>exp</code>)까지 계속 유효</td></tr>
+<tr><td>refresh_token에는?</td><td>해당 없음</td><td class="status-ok">즉시 반영됨 — 삭제 직후 refresh 시도는 <code>invalid_grant</code></td></tr>
+</table>
+
+<p>즉, <strong>"지금 당장 이 사용자의 접근을 완전히 차단"</strong>하고 싶다면 세션-쿠키 방식이 훨씬 유리하다. 토큰(JWT) 방식에서 즉시 차단이 꼭 필요하면 access_token의 TTL을 아주 짧게 유지하고(이번 데모처럼 초 단위), 장기 세션은 refresh_token 쪽으로 넘기는 절충이 일반적이다 — 완전한 즉시 차단이 필요하면 JWT 대신 opaque token + introspection(매 요청마다 auth-server에 조회) 아키텍처로 가야 하는데, 이는 이번 조사 범위를 넘어서 구현하지 않았다.</p>
+
+<h3>실측: 세션 강제 종료 (Redis)</h3>
+<pre><code># 로그인 후 세션이 Redis에 저장됐는지 확인
+docker exec sas-poc-redis redis-cli KEYS "spring:session:sessions:*"
+# => spring:session:sessions:642d3d1b-e922-4277-9b04-c5031c4b238a
+
+curl http://localhost:18081/web/hello -b cookies.txt   # 200
+
+# 관리자가 사용자 동의 없이 Redis에서 직접 세션 삭제
+docker exec sas-poc-redis redis-cli DEL "spring:session:sessions:642d3d1b-e922-4277-9b04-c5031c4b238a"
+
+# 같은 브라우저 쿠키로 재요청 -> 즉시 로그인 페이지로
+curl -i http://localhost:18081/web/hello -b cookies.txt
+# => HTTP/1.1 302  Location: http://localhost:18081/login</code></pre>
+
+<h3>실측: 토큰은 DB를 지워도 즉시 무효화되지 않음</h3>
+<pre><code>curl http://localhost:18081/api/hello -H "Authorization: Bearer &lt;access_token&gt;"   # 200
+
+# 관리자가 MySQL에서 직접 인가 레코드 삭제 (Step 2에서 SAS 공식 스키마로 전환한 테이블)
+docker exec sas-poc-mysql mysql -uroot -proot sas_poc \
+  -e "DELETE FROM oauth2_authorization WHERE principal_name='user';"
+
+curl http://localhost:18081/api/hello -H "Authorization: Bearer &lt;동일한 access_token&gt;"
+# => 여전히 200  ← JWT는 자체 서명 검증이라 DB와 무관하게 계속 통과됨
+
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/token \
+  --data-urlencode "grant_type=refresh_token" --data-urlencode "refresh_token=&lt;동일한 refresh_token&gt;"
+# => {"error":"invalid_grant"}  ← 이건 즉시 차단됨(AS가 매번 DB 조회)</code></pre>
+
+<p><small>이번 Step에서 auth-server의 <code>OAuth2AuthorizationService</code>를 인메모리에서 <code>JdbcOAuth2AuthorizationService</code>(MySQL)로 교체했다. <code>RegisteredClientRepository</code>는 그대로 property 기반(인메모리)으로 유지 — 이번 조사 질문(강제 종료 가능 여부)에는 인가/토큰 저장소만 바뀌면 충분하기 때문에 범위를 넘기지 않았다.</small></p>
+
+<h3>추가 확인: <code>/oauth2/revoke</code> + <code>/connect/logout</code> 조합으로는 즉시 차단이 되는가?</h3>
+<p><span class="status-warn">✔ 확인 완료 — 여전히 불가능하다.</span> access_token과 refresh_token을 둘 다 revoke하고, 거기에 OIDC RP-Initiated Logout(<code>/connect/logout</code>)까지 호출해도 <strong>원래 발급된 access_token은 여전히 resource-server를 통과한다.</strong></p>
+<pre><code>curl -u demo-client:secret -X POST http://localhost:9000/oauth2/revoke \
+  --data-urlencode "token=&lt;access_token&gt;" --data-urlencode "token_type_hint=access_token"     # 200
+curl -u demo-client:secret -X POST http://localhost:9000/oauth2/revoke \
+  --data-urlencode "token=&lt;refresh_token&gt;" --data-urlencode "token_type_hint=refresh_token"    # 200
+curl "http://localhost:9000/connect/logout?id_token_hint=&lt;id_token&gt;" -b cookies.txt          # 302 (로그아웃 성공)
+
+curl http://localhost:18081/api/hello -H "Authorization: Bearer &lt;동일한 access_token&gt;"
+# => 여전히 200 ← 셋 다 실행해도 이미 발급된 JWT는 막지 못한다</code></pre>
+<p><strong>이유:</strong> 세 엔드포인트 각각이 하는 일이 서로 다른 상태를 건드리기 때문이다.</p>
+<ul>
+  <li><code>/oauth2/revoke</code> — auth-server의 <code>oauth2_authorization</code> 레코드를 지운다(=앞으로의 <em>refresh</em>나 introspection 조회에는 영향).</li>
+  <li><code>/connect/logout</code> — auth-server 자신의 <strong>브라우저 로그인 세션(SecurityContext)</strong>을 끝낸다. 실제로 로그아웃 후 같은 쿠키로 <code>/oauth2/authorize</code>를 다시 호출하면 재로그인이 요구되는 것으로 확인했다(외부 React 로그인 페이지로 재리다이렉트됨). 하지만 이건 "다음 로그인부터"에 영향을 줄 뿐, <strong>이미 브라우저/클라이언트에 나가 있는 access_token</strong>과는 전혀 무관하다.</li>
+  <li>resource-server는 이 두 상태 중 <strong>어느 쪽도 조회하지 않는다</strong> — 오직 JWT 서명이 유효하고 <code>exp</code>가 안 지났는지만 로컬에서 확인한다. auth-server 쪽에서 무엇을 revoke하거나 logout하든, resource-server의 로컬 검증 로직 자체는 전혀 바뀌지 않는다.</li>
+</ul>
+<p>즉 세 엔드포인트를 다 동원해도 <strong>"토큰을 들고 있는 쪽(resource-server)이 매번 물어보게 만들지 않는 한" 즉시 차단은 구조적으로 불가능</strong>하다. 실제로 즉시 차단이 필요하면 resource-server의 <code>spring.security.oauth2.resourceserver.jwt.*</code> 설정을 <code>opaque-token.introspection-uri</code> 기반으로 바꿔 매 요청마다 <code>/oauth2/introspect</code>를 호출하도록 해야 한다(그러면 revoke 직후 introspection 응답이 <code>active: false</code>로 바뀌어 즉시 막힌다). 이번 조사는 "가능한지" 판단이 목적이라 이 전환은 구현하지 않고 결론만 남긴다.</p>
+
+<h3 class="refs">참고 문서</h3>
+<ul class="refs">
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/getting-started.html" target="_blank">Spring Authorization Server — JDBC 저장소(JdbcOAuth2AuthorizationService)</a></li>
+  <li><a href="https://docs.spring.io/spring-session/reference/http-session.html#httpsession-redis" target="_blank">Spring Session — Redis로 HttpSession 저장하기</a></li>
+  <li><a href="https://openid.net/specs/openid-connect-rpinitiated-1_0.html" target="_blank">OpenID Connect RP-Initiated Logout 1.0</a></li>
+  <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/opaque-token.html" target="_blank">Spring Security — Opaque Token / Introspection (즉시 무효화가 필요할 때)</a></li>
+</ul>
+</section>
+
+</body>
+</html>

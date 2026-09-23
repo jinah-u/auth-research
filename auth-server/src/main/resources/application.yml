@@ -1,0 +1,39 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: auth-server
+  datasource:
+    url: jdbc:mysql://localhost:3308/sas_poc?preserveInstants=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+    username: sas
+    password: sas
+  sql:
+    init:
+      mode: always
+  security:
+    oauth2:
+      authorizationserver:
+        issuer: http://localhost:9000
+        client:
+          demo-client:
+            registration:
+              client-id: demo-client
+              client-secret: "{noop}secret"
+              client-authentication-methods:
+                - client_secret_basic
+              authorization-grant-types:
+                - authorization_code
+                - refresh_token
+              redirect-uris:
+                - http://127.0.0.1:18080/authorized
+              scopes:
+                - openid
+                - profile
+            require-authorization-consent: true
+            token:
+              access-token-time-to-live: PT20S
+
+logging:
+  level:
+    org.springframework.security: DEBUG

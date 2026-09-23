@@ -1,0 +1,5 @@
+rootProject.name = 'spring-authorization-server-poc'
+
+include 'gateway'
+include 'auth-server'
+include 'resource-server'

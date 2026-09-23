@@ -1,0 +1,712 @@
+<meta charset="utf-8">
+<title>인증 서버 3안 비교</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --stage:#E9EDF2; --paper:#FFFFFF; --soft:#F3F5F8; --ink:#152033; --muted:#5A6578; --line:#D6DCE5;
+  --a1:#AE630C; --a2:#197454; --a3:#3B57A8;
+  --ok:#1B7A47; --warn:#A35F00; --no:#B53636;
+  --code:#EEF1F6;
+  --sans:"IBM Plex Sans KR","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",Consolas,"D2Coding",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --stage:#0C1119; --paper:#141B26; --soft:#1B2330; --ink:#E4E9F1; --muted:#97A2B4; --line:#2B3545;
+    --a1:#E3A25A; --a2:#52C193; --a3:#93A9F0;
+    --ok:#58CB8D; --warn:#E6A94D; --no:#EF7E7E; --code:#1F2836;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --stage:#0C1119; --paper:#141B26; --soft:#1B2330; --ink:#E4E9F1; --muted:#97A2B4; --line:#2B3545;
+  --a1:#E3A25A; --a2:#52C193; --a3:#93A9F0;
+  --ok:#58CB8D; --warn:#E6A94D; --no:#EF7E7E; --code:#1F2836;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--stage);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased}
+code{font-family:var(--mono);font-size:.86em;background:var(--code);padding:.05em .35em;border-radius:3px;word-break:break-word}
+
+/* ---------- deck frame ---------- */
+.stage{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px 24px}
+.deck{position:relative;width:min(100%, calc((100vh - 96px) * 16 / 9));aspect-ratio:16/9;max-width:100%}
+.slide{position:absolute;inset:0;background:var(--paper);border:1px solid var(--line);border-radius:6px;
+  box-shadow:0 10px 40px -18px rgba(10,20,40,.35);container-type:inline-size;overflow:hidden;display:none}
+.slide.on{display:flex}
+.in{font-size:1.2cqw;width:100%;height:100%;display:flex;flex-direction:column;padding:2.6em 3.4em 2em;gap:1.1em}
+.bar{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:13px}
+.bar button{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:6px 14px;cursor:pointer}
+.bar button:hover{border-color:var(--muted)}
+.bar button:focus-visible{outline:2px solid var(--a3);outline-offset:2px}
+.bar .count{font-variant-numeric:tabular-nums;min-width:4.5em;text-align:center}
+.bar .hint{opacity:.8}
+
+/* ---------- slide typography ---------- */
+.kicker{font-size:.82em;font-weight:600;letter-spacing:.06em;color:var(--muted);display:flex;gap:.8em;align-items:center}
+.kicker b{color:var(--ink);font-weight:700}
+.kicker .sep{width:2.2em;height:1px;background:var(--line)}
+h2{margin:0;font-size:1.95em;line-height:1.25;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+h2 small{font-size:.55em;font-weight:500;color:var(--muted);margin-left:.6em;letter-spacing:0}
+.lead{margin:0;color:var(--muted);font-size:1.02em;max-width:62em}
+.body{flex:1;min-height:0;display:flex;flex-direction:column;gap:1em}
+.foot{display:flex;justify-content:space-between;font-size:.72em;color:var(--muted);border-top:1px solid var(--line);padding-top:.7em}
+.foot .pg{font-variant-numeric:tabular-nums}
+
+/* plan colour chips */
+.p1{--pc:var(--a1)} .p2{--pc:var(--a2)} .p3{--pc:var(--a3)}
+.tag{display:inline-flex;align-items:center;gap:.45em;font-weight:600;font-size:.86em;color:var(--pc)}
+.tag::before{content:"";width:.6em;height:.6em;border-radius:2px;background:var(--pc)}
+
+/* status */
+.st{display:inline-grid;place-items:center;min-width:1.6em;height:1.6em;padding:0 .35em;border-radius:3px;font-weight:700;font-size:.92em;line-height:1}
+.st.o{color:var(--ok);background:color-mix(in srgb,var(--ok) 13%,transparent)}
+.st.w{color:var(--warn);background:color-mix(in srgb,var(--warn) 15%,transparent)}
+.st.x{color:var(--no);background:color-mix(in srgb,var(--no) 13%,transparent)}
+.st.n{color:var(--muted);background:var(--soft)}
+.tb,.tn{display:inline-flex;align-items:center;gap:.3em;font-size:.72em;font-weight:600;padding:.18em .55em;border-radius:99px;white-space:nowrap;vertical-align:.12em}
+.tb{color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.tn{color:var(--warn);border:1px dashed color-mix(in srgb,var(--warn) 70%,transparent)}
+
+/* tables */
+.tw{overflow:auto;min-height:0}
+table{border-collapse:collapse;width:100%;font-size:.9em;font-family:var(--sans);color:var(--ink)}
+th,td{text-align:left;vertical-align:top;padding:.5em .7em;border-bottom:1px solid var(--line)}
+thead th{font-size:.9em;font-weight:600;border-bottom:1.5px solid var(--ink);white-space:nowrap}
+tbody th{font-weight:600;white-space:nowrap;color:var(--ink)}
+td .sub{display:block;color:var(--muted);font-size:.88em;margin-top:.15em}
+td.c{text-align:center}
+.mx td{vertical-align:middle}
+.mx td .st{margin-right:.45em}
+.mx tbody tr:nth-child(odd){background:color-mix(in srgb,var(--soft) 70%,transparent)}
+
+/* 3-plan cards */
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:1em;flex:1;min-height:0}
+.plan{border:1px solid var(--line);border-top:3px solid var(--pc);border-radius:4px;padding:1em 1.1em;display:flex;flex-direction:column;gap:.6em;background:var(--paper)}
+.plan .hd{display:flex;justify-content:space-between;align-items:center;gap:.5em;flex-wrap:wrap}
+.plan .verdict{display:flex;align-items:center;gap:.55em;font-weight:700;font-size:1.08em}
+.plan .verdict .st{font-size:1.1em;min-width:1.9em;height:1.9em}
+.plan ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:.3em;font-size:.93em}
+.plan li::marker{color:var(--muted)}
+.plan .note{margin-top:auto;font-size:.84em;color:var(--muted);border-top:1px dashed var(--line);padding-top:.5em}
+
+/* callouts */
+.callout{border-left:3px solid var(--pc,var(--ink));background:var(--soft);padding:.7em 1em;font-size:.93em;border-radius:0 4px 4px 0}
+.callout b{color:var(--ink)}
+.row{display:flex;gap:1em;min-height:0}
+.row>*{flex:1;min-width:0}
+
+/* chips flow */
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:.45em;font-size:.88em}
+.chain span{border:1px solid var(--line);border-radius:3px;padding:.3em .65em;background:var(--paper);white-space:nowrap}
+.chain span.k{border-color:var(--pc);color:var(--pc);font-weight:600}
+.chain i{font-style:normal;color:var(--muted)}
+
+/* diagrams */
+.dia{flex:1;min-height:0;display:flex;justify-content:center;align-items:stretch;overflow:hidden}
+.dia svg{width:100%;height:100%;display:block}
+svg text{font-family:var(--sans);fill:var(--ink)}
+svg .actor rect{fill:var(--soft);stroke:var(--line)}
+svg .actor text{font-weight:600;font-size:14px}
+svg .life{stroke:var(--line);stroke-dasharray:4 4}
+svg .msg{stroke:var(--ink);stroke-width:1.3;fill:none}
+svg .msg.ret{stroke-dasharray:5 4}
+svg .msg.no{stroke:var(--no)} svg .msg.ok{stroke:var(--ok)}
+svg .lbl{font-size:13.5px}
+svg .lbl.no{fill:var(--no)} svg .lbl.ok{fill:var(--ok)}
+svg .nt rect{fill:color-mix(in srgb,var(--pc,var(--a2)) 10%,var(--paper));stroke:color-mix(in srgb,var(--pc,var(--a2)) 45%,transparent)}
+svg .nt text{font-size:13px;fill:var(--ink)}
+svg .sepl{stroke:var(--muted);stroke-dasharray:2 5}
+svg .sept{font-size:11.5px;fill:var(--muted);font-weight:600;letter-spacing:.04em}
+svg .ah{fill:var(--ink)} svg .ah-no{fill:var(--no)} svg .ah-ok{fill:var(--ok)}
+svg .box{fill:var(--paper);stroke:var(--ink);stroke-width:1.2}
+svg .box.soft{fill:var(--soft);stroke:var(--line)}
+svg .box.acc{stroke:var(--pc);stroke-width:1.6}
+svg .bt{font-size:14px;font-weight:600}
+svg .bs{font-size:12px;fill:var(--muted)}
+svg .ln{stroke:var(--ink);stroke-width:1.3;fill:none}
+svg .ln.d{stroke-dasharray:5 4}
+
+/* cover */
+.cover .in{justify-content:space-between;padding:3.6em 4.2em 2.4em}
+.cover h1{margin:0;font-size:3.1em;line-height:1.2;letter-spacing:-.02em;font-weight:700;text-wrap:balance}
+.cover .sub{color:var(--muted);font-size:1.15em;margin-top:.8em}
+.cover .three{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2em}
+.cover .three div{border-top:3px solid var(--pc);padding-top:.8em}
+.cover .three b{display:block;font-size:1.25em;margin-top:.2em}
+.cover .three span{color:var(--muted);font-size:.9em}
+.cover .meta{display:flex;justify-content:space-between;color:var(--muted);font-size:.85em;flex-wrap:wrap;gap:.5em}
+.legend{display:flex;gap:1.2em;flex-wrap:wrap;font-size:.82em;color:var(--muted);align-items:center}
+
+.two{display:grid;grid-template-columns:1.1fr 1fr;gap:1.4em;flex:1;min-height:0}
+.list{margin:0;padding-left:1.15em;display:flex;flex-direction:column;gap:.45em;font-size:.95em}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1em}
+.fact{border:1px solid var(--line);border-radius:4px;padding:.9em 1em;display:flex;flex-direction:column;gap:.45em;font-size:.92em}
+.fact .res{display:flex;align-items:center;gap:.5em;font-weight:700}
+.fact .cmd{font-family:var(--mono);font-size:.8em;color:var(--muted)}
+
+/* ---------- narrow screens: stacked document ---------- */
+@media (max-width:760px), (max-height:460px){
+  html,body{height:auto}
+  .stage{height:auto;display:block;padding:16px}
+  .deck{width:100%;aspect-ratio:auto;display:flex;flex-direction:column;gap:16px}
+  .slide{position:relative;inset:auto;display:flex;container-type:normal}
+  .in{font-size:14px;padding:22px 18px;height:auto}
+  .bar{display:none}
+  .plans,.two,.facts,.cover .three{grid-template-columns:1fr}
+  .row{flex-direction:column}
+  .dia{overflow-x:auto;justify-content:flex-start}
+  .dia svg{min-width:620px;height:auto}
+  .cover h1{font-size:28px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .slide.on .in{animation:fade .25s ease-out}
+  @keyframes fade{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-no" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-no" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-ok" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+</svg>
+
+<div class="stage">
+<main class="deck" id="deck">
+
+<!-- 1. 표지 -->
+<section class="slide cover" id="s1"><div class="in">
+  <div>
+    <div class="kicker"><b>기술 조사 보고</b><span class="sep"></span>인증 · 인가 아키텍처</div>
+    <h1 style="margin-top:.6em">인증 서버 구성 3안 비교</h1>
+    <div class="sub">자체 JWT · Spring Authorization Server · Keycloak을 6개 항목으로 비교</div>
+  </div>
+  <div class="three">
+    <div class="p1"><span class="tag">1안</span><b>자체 JWT</b><span>이벤트유 방식. 인증 서버와 토큰 정책을 직접 구현</span></div>
+    <div class="p2"><span class="tag">2안</span><b>Spring Authorization Server</b><span>Spring Security 7.1 내장 OAuth2/OIDC 서버. PoC 실측 진행</span></div>
+    <div class="p3"><span class="tag">3안</span><b>Keycloak</b><span>독립 실행형 IAM 제품. 문서 기준으로 조사</span></div>
+  </div>
+  <div class="meta">
+    <span>2026-09-23</span>
+    <span>PoC 환경: Spring Boot 4.1.1 · Spring Security 7.1.1 · Gateway MVC · MySQL · MyBatis · Redis</span>
+  </div>
+</div></section>
+
+<!-- 2. 요약 -->
+<section class="slide" id="s2"><div class="in">
+  <div class="kicker"><b>요약</b><span class="sep"></span>한눈에 보기</div>
+  <h2>항목별 가능 여부</h2>
+  <div class="body">
+    <div class="tw">
+    <table class="mx">
+      <thead><tr><th style="width:17%">항목</th><th class="p1"><span class="tag">1안 자체 JWT</span></th><th class="p2"><span class="tag">2안 Spring Authorization Server</span></th><th class="p3"><span class="tag">3안 Keycloak</span></th></tr></thead>
+      <tbody>
+        <tr><th>1. 인증/인가 방식</th><td>JWT를 클라이언트가 보관하고 Bearer로 전달</td><td>OAuth2 Code + BFF 세션 쿠키 <span class="tb">✔ 테스트 완료</span></td><td>OAuth2 Code + BFF 세션 쿠키</td></tr>
+        <tr><th>　회원 정보 MySQL</th><td><span class="st o">O</span>기존 테이블 그대로 사용</td><td><span class="st o">O</span>기존 테이블 연동 <span class="tb">✔ 테스트 완료</span></td><td><span class="st w">△</span>전용 DB 기본, 연동하려면 SPI 필요</td></tr>
+        <tr><th>2. 2FA 커스텀</th><td><span class="st o">O</span>전부 직접 구현</td><td><span class="st o">O</span>MFA 프레임워크 내장 <span class="tb">✔ 테스트 완료</span></td><td><span class="st o">O</span>TOTP 기본 제공, SMS는 SPI 필요</td></tr>
+        <tr><th>3. refreshToken</th><td><span class="st o">O</span>정책 직접 설계</td><td><span class="st o">O</span>기본 재사용, 설정으로 Rotation <span class="tb">✔ 테스트 완료</span></td><td><span class="st o">O</span>설정으로 Rotation</td></tr>
+        <tr><th>4. 로그아웃/만료</th><td><span class="st o">O</span>직접 구현 (JWT는 exp까지 유효)</td><td><span class="st o">O</span>세션·RT 폐기 (JWT는 exp까지 유효) <span class="tb">✔ 테스트 완료</span></td><td><span class="st o">O</span>Logout Endpoint 제공</td></tr>
+        <tr><th>5. 강제 세션 종료</th><td><span class="st w">△</span>RT 삭제·블랙리스트 직접 구현</td><td><span class="st w">△</span>세션·RT 즉시 차단, 발급된 JWT는 차단 불가 <span class="tb">✔ 테스트 완료</span></td><td><span class="st w">△</span>Admin Console 제공, JWT 한계는 동일</td></tr>
+        <tr><th>6. 로그인 UI 외부 배치</th><td><span class="st o">O</span>자유롭게 구성</td><td><span class="st o">O</span>외부 React 로그인 화면 <span class="tb">✔ 테스트 완료</span></td><td><span class="st w">△</span>Theme 커스텀만 기본 제공 <span class="tn">테스트 필요</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="legend"><span><span class="st o">O</span> 가능</span><span><span class="st w">△</span> 조건부 또는 추가 구현 필요</span><span><span class="st x">X</span> 불가</span><span><span class="tb">✔ 테스트 완료</span> PoC 실측 확인</span><span><span class="tn">테스트 필요</span> 미검증</span></div>
+  </div>
+  <div class="foot"><span>공통 한계: 로컬에서 검증하는 JWT Access Token은 어느 안이든 발급 후 exp까지 즉시 차단할 수 없음</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 3. 1안 구조 -->
+<section class="slide" id="s3"><div class="in">
+  <div class="kicker"><b>1 · 인증/인가 방식</b><span class="sep"></span>1안 자체 JWT</div>
+  <h2>자체 인증 서버가 토큰을 발급하고 클라이언트가 직접 보관</h2>
+  <div class="body">
+    <div class="two">
+      <div class="dia p1">
+        <svg viewBox="0 0 560 380" role="img" aria-label="1안 자체 JWT 구조 흐름도">
+          <!-- top row -->
+          <rect class="box acc" x="20" y="30" width="150" height="62" rx="4"/><text class="bt" x="95" y="58" text-anchor="middle">브라우저 / 앱</text><text class="bs" x="95" y="78" text-anchor="middle">AT · RT 보관</text>
+          <rect class="box acc" x="290" y="30" width="170" height="62" rx="4"/><text class="bt" x="375" y="58" text-anchor="middle">자체 인증 서버</text><text class="bs" x="375" y="78" text-anchor="middle">JWT 서명 · 발급</text>
+          <path class="ln" d="M170,50 H286" marker-end="url(#ah)"/><text class="lbl" x="228" y="43" text-anchor="middle">① ID / PW</text>
+          <path class="ln d" d="M290,76 H174" marker-end="url(#ah)"/><text class="lbl" x="232" y="100" text-anchor="middle">② AT(JWT) + RT</text>
+          <!-- storage -->
+          <rect class="box soft" x="290" y="140" width="80" height="50" rx="4"/><text class="bt" x="330" y="163" text-anchor="middle">MySQL</text><text class="bs" x="330" y="180" text-anchor="middle">회원</text>
+          <rect class="box soft" x="380" y="140" width="80" height="50" rx="4"/><text class="bt" x="420" y="163" text-anchor="middle">Redis/DB</text><text class="bs" x="420" y="180" text-anchor="middle">RT 저장</text>
+          <path class="ln" d="M330,92 V136" marker-end="url(#ah)"/><path class="ln" d="M420,92 V136" marker-end="url(#ah)"/>
+          <!-- bottom row -->
+          <path class="ln" d="M95,92 V268" marker-end="url(#ah)"/><text class="lbl" x="105" y="200">③ Authorization: Bearer AT</text>
+          <rect class="box" x="20" y="272" width="150" height="62" rx="4"/><text class="bt" x="95" y="300" text-anchor="middle">Gateway</text><text class="bs" x="95" y="320" text-anchor="middle">토큰 전달 · 1차 검증</text>
+          <path class="ln" d="M170,303 H286" marker-end="url(#ah)"/><text class="lbl" x="228" y="296" text-anchor="middle">④ Bearer AT</text>
+          <rect class="box" x="290" y="272" width="170" height="62" rx="4"/><text class="bt" x="375" y="300" text-anchor="middle">Resource Server</text><text class="bs" x="375" y="320" text-anchor="middle">서명 · exp 로컬 검증</text>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.9em">
+        <ul class="list">
+          <li><b>로그인 상태:</b> 세션 방식과 토큰 방식 중 하나를 직접 설계합니다. 이벤트유 방식은 토큰 방식입니다.</li>
+          <li><b>Access Token:</b> JWT를 직접 생성하고, 각 서비스가 서명과 exp를 검증합니다.</li>
+          <li><b>Refresh Token:</b> 저장, 만료, 재발급, Rotation, 폐기 정책을 모두 직접 구현합니다.</li>
+          <li><b>토큰 저장 위치:</b> 클라이언트 보관 방식(Storage 또는 Cookie)과 서버 측 저장소(Redis/DB) 사용 여부를 직접 결정합니다.</li>
+        </ul>
+        <div class="callout p1"><b>특징:</b> 구조가 단순하고 자유도가 가장 높습니다. 대신 표준 프로토콜(OAuth2/OIDC)이 제공하는 보안 장치(PKCE, 표준 Revocation 등)도 필요하면 직접 만들어야 합니다.</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>AT = Access Token, RT = Refresh Token</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 4. 2·3안 시퀀스 -->
+<section class="slide" id="s4"><div class="in">
+  <div class="kicker"><b>1 · 인증/인가 방식</b><span class="sep"></span>2안 · 3안 공통 (BFF 구조)</div>
+  <h2>Authorization Code 흐름으로 발급하고, 토큰은 Gateway 세션에 보관 <small>SAS와 Keycloak 동일</small></h2>
+  <div class="body">
+    <div class="dia p2" data-seq="bff"></div>
+  </div>
+  <div class="foot"><span>브라우저에는 토큰이 전달되지 않고 Gateway 세션 쿠키만 전달됨 · Gateway가 여러 대이면 Spring Session + Redis로 세션 공유</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 5. 토큰 vs 세션 -->
+<section class="slide" id="s5"><div class="in">
+  <div class="kicker"><b>1 · 인증/인가 방식</b><span class="sep"></span>토큰 · 세션 · 쿠키</div>
+  <h2>토큰 방식과 세션-쿠키 방식의 차이 <span class="tb">✔ 테스트 완료</span></h2>
+  <div class="body">
+    <div class="tw">
+    <table>
+      <thead><tr><th style="width:18%"></th><th>토큰(JWT): Resource Server <code>/api/**</code></th><th>세션-쿠키: <code>/web/**</code></th></tr></thead>
+      <tbody>
+        <tr><th>인증 상태 저장</th><td>서버에 저장하지 않음. 서명된 클레임에 담김 (stateless)</td><td>서버 HttpSession에 SecurityContext 저장 (stateful)</td></tr>
+        <tr><th>전달 방식</th><td><code>Authorization: Bearer &lt;jwt&gt;</code> 헤더</td><td><code>JSESSIONID</code> 쿠키</td></tr>
+        <tr><th>인증 실패 시</th><td>401 + <code>WWW-Authenticate: Bearer</code></td><td>302 Redirect → <code>/login</code></td></tr>
+        <tr><th>검증</th><td>JWK 공개키로 로컬 검증 (요청마다 인증 서버를 조회하지 않음)</td><td>요청마다 세션 저장소 조회</td></tr>
+        <tr><th>만료 · 폐기</th><td>exp로 자연 만료. 서버가 능동적으로 끊기 어려움</td><td>서버에서 세션을 삭제하면 즉시 무효화</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="row">
+      <div class="callout p1"><span class="tag">1안</span><br>브라우저·앱이 JWT를 직접 들고 다니는 <b>토큰 방식</b>입니다. 토큰 탈취에 대비해 저장 위치와 짧은 TTL을 설계해야 합니다.</div>
+      <div class="callout p2"><span class="tag">2안</span> <span class="tag p3">3안</span><br><b>하이브리드 방식</b>입니다. 브라우저와 Gateway 사이는 세션 쿠키로, Gateway와 Resource Server 사이는 Bearer JWT로 통신합니다. 브라우저에는 토큰이 노출되지 않습니다.</div>
+    </div>
+  </div>
+  <div class="foot"><span>PoC: Resource Server에 SecurityFilterChain 두 개(JWT 체인과 폼 로그인 체인)를 두고 비교 실측</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 6. 회원 정보 보관 -->
+<section class="slide" id="s6"><div class="in">
+  <div class="kicker"><b>1 · 인증/인가 방식</b><span class="sep"></span>회원 정보 보관 위치</div>
+  <h2>기존 MySQL 회원 테이블을 그대로 쓸 수 있는가</h2>
+  <div class="body">
+    <div class="plans">
+      <div class="plan p1">
+        <div class="hd"><span class="tag">1안 자체 JWT</span></div>
+        <div class="verdict"><span class="st o">O</span>기존 MySQL 사용</div>
+        <ul>
+          <li>기존 회원 테이블을 인증 정보 저장소로 그대로 사용</li>
+          <li>DB 구조와 인증 정보 관리 방식을 직접 설계</li>
+        </ul>
+      </div>
+      <div class="plan p2">
+        <div class="hd"><span class="tag">2안 SAS</span><span class="tb">✔ 테스트 완료</span></div>
+        <div class="verdict"><span class="st o">O</span>기존 MySQL 사용</div>
+        <ul>
+          <li>기존 회원 테이블을 Spring Security 인증과 연결 (MyBatis 조회로 로그인 검증)</li>
+          <li>Authorization, Client, Consent 등 인증 서버 데이터도 JDBC로 같은 MySQL에 저장 (<code>oauth2_authorization</code>)</li>
+          <li>인증 서버 전용 DB가 필요 없음</li>
+        </ul>
+        <div class="note">주의: MyBatis Starter 3.0.4가 Boot 4.1에서 자동 구성되지 않아 <code>SqlSessionFactory</code> 빈을 직접 정의했습니다.</div>
+      </div>
+      <div class="plan p3">
+        <div class="hd"><span class="tag">3안 Keycloak</span></div>
+        <div class="verdict"><span class="st w">△</span>전용 DB가 기본</div>
+        <ul>
+          <li>사용자와 인증 정보를 Keycloak DB에 저장</li>
+          <li>서비스 회원 정보와 분리하여 관리하는 구조</li>
+          <li>기존 MySQL 회원을 인증에 쓰려면 <b>User Storage SPI</b>로 외부 저장소를 연동해야 함</li>
+        </ul>
+        <div class="note">SPI 확장 코드를 개발하고 Keycloak 버전 업그레이드에 맞춰 유지보수해야 합니다.</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>회원 DB 이원화 여부는 운영 비용(동기화, 백업, 장애 지점)에 직접 영향을 줌</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 7. 2FA -->
+<section class="slide" id="s7"><div class="in">
+  <div class="kicker"><b>2 · 인증 절차 커스텀</b><span class="sep"></span>2FA</div>
+  <h2>1차 인증 뒤에 2차 인증 단계를 추가할 수 있는가</h2>
+  <div class="body">
+    <div class="plans">
+      <div class="plan p1">
+        <div class="hd"><span class="tag">1안 자체 JWT</span></div>
+        <div class="verdict"><span class="st o">O</span>가능 (전부 직접 구현)</div>
+        <ul>
+          <li>SMS, Email, OTP 등 원하는 수단을 추가</li>
+          <li>조건부 2FA 정책도 직접 구현</li>
+          <li>1차와 2차 사이의 인증 상태를 직접 관리</li>
+        </ul>
+      </div>
+      <div class="plan p2">
+        <div class="hd"><span class="tag">2안 SAS</span><span class="tb">✔ 테스트 완료</span></div>
+        <div class="verdict"><span class="st o">O</span>가능 (MFA 프레임워크 내장)</div>
+        <ul>
+          <li>Spring Security 7.1의 <code>@EnableMultiFactorAuthentication</code>과 One-Time Token 로그인 조합</li>
+          <li>팩터(<code>FACTOR_PASSWORD</code>, <code>FACTOR_OTT</code>)가 모두 모여야 <code>/oauth2/authorize</code> 통과</li>
+          <li>OTP 발송 채널(SMS/Email)은 Handler로 자유롭게 교체</li>
+        </ul>
+        <div class="note">주의: 전역 적용하면 <code>/oauth2/token</code>이 403이 되므로 <code>/oauth2/authorize</code>에만 적용했습니다.</div>
+      </div>
+      <div class="plan p3">
+        <div class="hd"><span class="tag">3안 Keycloak</span></div>
+        <div class="verdict"><span class="st o">O</span>가능 (일부 수단은 확장 필요)</div>
+        <ul>
+          <li>관리 화면의 Authentication Flow에서 단계를 조합</li>
+          <li>TOTP(Authenticator 앱)와 WebAuthn/Passkey 기본 제공</li>
+          <li>조건부 인증 Flow 구성 가능</li>
+          <li><b>SMS OTP는 기본 제공하지 않음.</b> Custom Authenticator(SPI)를 만들고 발송 서비스를 연동해야 함</li>
+        </ul>
+      </div>
+    </div>
+    <div class="chain p2">
+      <span>Authorization 요청</span><i>→</i><span>ID / PW (1차)</span><i>→</i><span class="k">OTP · TOTP (2차)</span><i>→</i><span>최종 인증 완료</span><i>→</i><span>Authorization Code</span><i>→</i><span>Access Token</span>
+      <i style="margin-left:.6em">2안·3안 공통: 2FA를 마친 뒤에 Code를 발급</i>
+    </div>
+  </div>
+  <div class="foot"><span>PoC: OTP는 실제 발송 대신 서버 콘솔 로그로 대체(mock)</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 8. refresh 시퀀스 -->
+<section class="slide" id="s8"><div class="in">
+  <div class="kicker"><b>3 · refreshToken 동작 방식</b><span class="sep"></span>갱신 흐름</div>
+  <h2>Access Token이 만료되면 Refresh Token으로 재발급</h2>
+  <div class="body">
+    <div class="dia p2" data-seq="refresh"></div>
+  </div>
+  <div class="foot"><span>1안은 클라이언트(브라우저/앱)가 직접 갱신 요청 · 2안·3안(BFF)은 Gateway의 OAuth2AuthorizedClientManager가 갱신을 처리</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 9. refresh 비교표 -->
+<section class="slide" id="s9"><div class="in">
+  <div class="kicker"><b>3 · refreshToken 동작 방식</b><span class="sep"></span>정책 비교</div>
+  <h2>Rotation, 저장 위치, 수명 비교</h2>
+  <div class="body">
+    <div class="tw">
+    <table>
+      <thead><tr><th style="width:15%"></th><th class="p1"><span class="tag">1안 자체 JWT</span></th><th class="p2"><span class="tag">2안 SAS</span> <span class="tb">✔ 테스트 완료</span></th><th class="p3"><span class="tag">3안 Keycloak</span></th></tr></thead>
+      <tbody>
+        <tr><th>갱신 주체</th><td>클라이언트가 직접 요청</td><td>Gateway가 처리 (<code>grant_type=refresh_token</code>)</td><td>Gateway가 처리 (Token Endpoint)</td></tr>
+        <tr><th>RT 저장 위치</th><td>Redis/DB 직접 설계</td><td><code>oauth2_authorization</code> (JDBC, MySQL)</td><td>Keycloak DB와 사용자 세션</td></tr>
+        <tr><th>기본 동작</th><td>직접 설계</td><td><b>재사용.</b> 갱신해도 RT 값은 그대로이고 AT만 새로 발급<span class="sub"><code>reuseRefreshTokens=true</code> 기본값, 실측 확인</span></td><td>재사용<span class="sub">Realm 설정 <code>Revoke Refresh Token</code> 기본값 OFF</span></td></tr>
+        <tr><th>Rotation 전환</th><td>직접 구현</td><td><code>reuse-refresh-tokens: false</code> 설정 시 사용할 때마다 교체되고 이전 RT는 무효화</td><td><code>Revoke Refresh Token</code> ON (재사용 허용 횟수 설정 가능)</td></tr>
+        <tr><th>기본 수명</th><td>직접 결정</td><td>AT 5분 · RT 60분 (문서 기준)</td><td>AT 5분 · RT는 SSO Session Idle 30분 / Max 10시간에 연동</td></tr>
+        <tr><th>폐기 시</th><td>저장소에서 삭제하면 재발급 차단</td><td>revoke 후 갱신 요청하면 <code>invalid_grant</code> (실측 확인)</td><td>세션 종료 또는 revoke 시 갱신 불가</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="callout p2"><b>보안 고려:</b> 재사용 방식에서는 RT가 한 번 유출되면 만료 전까지 AT를 계속 새로 받을 수 있습니다. 운영 환경에서는 Rotation을 켜는 것을 검토해야 합니다(2안·3안 모두 설정만으로 가능).</div>
+  </div>
+  <div class="foot"><span>2안 PoC: 동일한 RT로 여러 번 갱신해도 모두 200 · 응답의 RT 값은 요청 값과 동일</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 10. 로그아웃 / 만료 -->
+<section class="slide" id="s10"><div class="in">
+  <div class="kicker"><b>4 · 로그아웃 / 토큰 만료</b></div>
+  <h2>로그아웃하면 무엇이 끊기고 무엇이 남는가</h2>
+  <div class="body">
+    <div class="tw">
+    <table class="mx">
+      <thead><tr><th style="width:20%"></th><th class="p1"><span class="tag">1안 자체 JWT</span></th><th class="p2"><span class="tag">2안 SAS</span> <span class="tb">✔ 테스트 완료</span></th><th class="p3"><span class="tag">3안 Keycloak</span></th></tr></thead>
+      <tbody>
+        <tr><th>로그아웃 기능</th><td><span class="st o">O</span>직접 구현</td><td><span class="st o">O</span>Spring Security Logout, OIDC <code>/connect/logout</code></td><td><span class="st o">O</span>Logout Endpoint, RP-Initiated Logout</td></tr>
+        <tr><th>인증 서버 세션 종료</th><td><span class="st n">–</span>토큰 방식이라 세션 없음</td><td><span class="st o">O</span>다음 인가 요청부터 재로그인 필요</td><td><span class="st o">O</span>Keycloak 사용자 세션 종료</td></tr>
+        <tr><th>RT 폐기 (재발급 차단)</th><td><span class="st o">O</span>저장소에서 삭제</td><td><span class="st o">O</span><code>/oauth2/revoke</code> → <code>invalid_grant</code></td><td><span class="st o">O</span>세션 종료 시 갱신 불가</td></tr>
+        <tr><th>이미 발급된 JWT AT</th><td><span class="st x">X</span>exp까지 유효 (블랙리스트는 별도 구현)</td><td><span class="st x">X</span>revoke가 200을 반환해도 JWT는 계속 통과</td><td><span class="st x">X</span>exp까지 유효</td></tr>
+        <tr><th>만료 후 처리</th><td colspan="3">AT 만료 → 401 → RT로 재발급 → RT까지 만료되면 재로그인 <span style="color:var(--muted)">(세 안 모두 동일)</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="row">
+      <div class="callout p2"><b>실측: revoke로는 JWT를 끊을 수 없음</b><br>revoke는 인증 서버 저장소만 갱신합니다. Resource Server는 서명만 로컬에서 검증하므로 이 변경을 알지 못합니다.</div>
+      <div class="callout p2"><b>실측: exp 이후 최대 약 60초 더 유효</b><br>AT TTL을 20초로 설정한 뒤 발급하고 +77초까지 200, +81초에 401. 원인은 <code>JwtTimestampValidator</code>의 기본 clock skew 60초입니다.</div>
+    </div>
+  </div>
+  <div class="foot"><span>세션 방식 로그아웃(<code>POST /logout</code>)은 즉시 반영되어 같은 쿠키로 다시 요청하면 로그인 페이지로 이동함 (실측)</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 11. 강제 종료 표 -->
+<section class="slide" id="s11"><div class="in">
+  <div class="kicker"><b>5 · 악의적 세션 강제 종료</b><span class="sep"></span>가능 여부</div>
+  <h2>관리자가 특정 사용자를 즉시 쫓아낼 수 있는가</h2>
+  <div class="body">
+    <div class="tw">
+    <table class="mx">
+      <thead><tr><th style="width:24%">강제 종료 대상</th><th class="p1"><span class="tag">1안 자체 JWT</span></th><th class="p2"><span class="tag">2안 SAS</span></th><th class="p3"><span class="tag">3안 Keycloak</span></th></tr></thead>
+      <tbody>
+        <tr><th>서비스 세션 (Gateway/BFF)</th><td><span class="st n">–</span>세션 없음 (stateless)</td><td><span class="st o">O</span>Redis 세션 삭제 시 즉시 차단 <span class="tb">✔ 테스트 완료</span></td><td><span class="st o">O</span>Gateway 세션 삭제, Back-Channel Logout 연동</td></tr>
+        <tr><th>인증 서버 사용자 세션</th><td><span class="st n">–</span>해당 없음</td><td><span class="st o">O</span>세션 무효화 <span class="tb">✔ 테스트 완료</span></td><td><span class="st o">O</span>사용자별·Realm 전체 세션 종료</td></tr>
+        <tr><th>Refresh Token 추가 사용 차단</th><td><span class="st o">O</span>저장소 삭제</td><td><span class="st o">O</span>DB 레코드 삭제 또는 revoke <span class="tb">✔ 테스트 완료</span></td><td><span class="st o">O</span>세션 종료, Revocation Endpoint</td></tr>
+        <tr><th>이미 발급된 JWT 즉시 차단</th><td><span class="st w">△</span>블랙리스트 직접 구현 시</td><td><span class="st x">X</span>로컬 검증 구조에서는 불가 <span class="tb">✔ 테스트 완료</span></td><td><span class="st x">X</span>로컬 검증 구조에서는 불가 (공식 문서 명시)</td></tr>
+        <tr><th>Introspection 방식 전환</th><td><span class="st w">△</span>직접 구현</td><td><span class="st o">O</span><code>/oauth2/introspect</code> 제공</td><td><span class="st o">O</span>Introspection Endpoint 제공</td></tr>
+        <tr><th>세션 관리 UI</th><td><span class="st w">△</span>직접 구현</td><td><span class="st w">△</span>직접 구현</td><td><span class="st o">O</span>Admin Console · Admin REST API</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="callout" style="--pc:var(--ink)"><b>공통 결론:</b> BFF 구조에서는 브라우저가 토큰을 갖고 있지 않으므로 <b>Gateway 세션을 끊으면 일반적인 강제 로그아웃은 즉시 됩니다.</b> 다만 이미 탈취된 JWT까지 막으려면 AT TTL을 짧게 두거나 Introspection으로 전환해야 합니다.</div>
+  </div>
+  <div class="foot"><span>Keycloak 문서: "Sign out all active sessions"는 이미 발급된 Access Token을 폐기하지 않으며 자연 만료가 필요함</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 12. 2안 실측 -->
+<section class="slide" id="s12"><div class="in">
+  <div class="kicker"><b>5 · 악의적 세션 강제 종료</b><span class="sep"></span>2안 PoC 실측</div>
+  <h2>무엇을 지우면 즉시 끊기는가 <span class="tb">✔ 테스트 완료</span></h2>
+  <div class="body">
+    <div class="facts p2">
+      <div class="fact">
+        <span class="tag">실험 A · 세션-쿠키</span>
+        <div class="cmd">Redis에서 spring:session:sessions:&lt;id&gt; 삭제</div>
+        <div class="res"><span class="st o">O</span>즉시 차단</div>
+        <div>같은 쿠키로 다시 요청하면 곧바로 302 → <code>/login</code></div>
+      </div>
+      <div class="fact">
+        <span class="tag">실험 B · 인가 레코드</span>
+        <div class="cmd">MySQL oauth2_authorization 행 삭제</div>
+        <div class="res"><span class="st x">X</span>JWT는 계속 200</div>
+        <div><span class="st o">O</span> 같은 RT로 갱신을 요청하면 <code>invalid_grant</code>로 즉시 차단</div>
+      </div>
+      <div class="fact">
+        <span class="tag">실험 C · 전부 동원</span>
+        <div class="cmd">AT revoke + RT revoke + /connect/logout</div>
+        <div class="res"><span class="st x">X</span>JWT는 여전히 200</div>
+        <div>세 요청 모두 성공했지만, 이미 발급된 AT는 Resource Server를 계속 통과</div>
+      </div>
+    </div>
+    <div class="two" style="grid-template-columns:1fr 1fr">
+      <div class="callout p2"><b>이유:</b> revoke는 인증 서버의 인가 레코드를, logout은 인증 서버의 브라우저 세션을 바꿉니다. Resource Server는 두 상태 모두 조회하지 않고 <b>JWT 서명과 exp만 로컬에서 확인</b>합니다.</div>
+      <div class="callout" style="--pc:var(--ink)"><b>즉시 차단이 필요할 때의 선택지</b>
+        <ul class="list" style="margin-top:.4em;font-size:.95em">
+          <li>BFF Gateway 세션 강제 종료 (Redis 삭제)</li>
+          <li>AT TTL 단축, 장기 로그인 유지는 RT로 처리</li>
+          <li>Opaque Token + Introspection으로 전환 (요청마다 조회. 이번 조사에서는 구현하지 않음)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>PoC: 인가 저장소는 JdbcOAuth2AuthorizationService(MySQL), 세션은 Spring Session Data Redis</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 13. 로그인 UI -->
+<section class="slide" id="s13"><div class="in">
+  <div class="kicker"><b>6 · 로그인 UI 커스텀 / 외부 배치</b><span class="sep"></span>가능 여부</div>
+  <h2>로그인 화면을 인증 서버 밖(React 등)에 둘 수 있는가</h2>
+  <div class="body">
+    <div class="plans">
+      <div class="plan p1">
+        <div class="hd"><span class="tag">1안 자체 JWT</span></div>
+        <div class="verdict"><span class="st o">O</span>제약 없음</div>
+        <ul>
+          <li>로그인 API를 직접 만들기 때문에 UI 위치와 형태가 자유로움</li>
+          <li>서비스 화면에 로그인 폼을 바로 넣을 수 있음</li>
+        </ul>
+      </div>
+      <div class="plan p2">
+        <div class="hd"><span class="tag">2안 SAS</span><span class="tb">✔ 테스트 완료</span></div>
+        <div class="verdict"><span class="st o">O</span>내부 커스텀 · 외부 배치 모두 가능</div>
+        <ul>
+          <li>내부: <code>formLogin().loginPage(...)</code>로 자체 화면 교체</li>
+          <li>외부: 별도로 배포한 React(:5180) 로그인 화면으로 Redirect하는 방식을 공식 확장 지점으로 지원</li>
+          <li>인증은 여전히 SAS의 Spring Security가 처리하고, 이후 Code → Token 흐름은 그대로 유지</li>
+        </ul>
+        <div class="note">제약: 다른 origin에서 POST하므로 <code>/login</code> CSRF 예외(또는 Cookie CSRF 토큰)가 필요합니다. PoC에서는 2차 OTP 화면을 SAS 기본 화면으로 두었습니다.</div>
+      </div>
+      <div class="plan p3">
+        <div class="hd"><span class="tag">3안 Keycloak</span><span class="tn">테스트 필요</span></div>
+        <div class="verdict"><span class="st w">△</span>내부 Theme만 기본 제공</div>
+        <ul>
+          <li>내부: Keycloak Theme으로 HTML/CSS, 로고, 문구 커스텀 <span class="st o">O</span></li>
+          <li>외부: React에서 ID/PW를 직접 받아 Keycloak에 인증시키는 구조는 기본 방식이 아님 <span class="st w">△</span></li>
+          <li>별도 인증 연동 방식이나 Keycloak 확장 구현을 검토해야 함</li>
+        </ul>
+        <div class="note">Direct Access Grant(ROPC)는 OAuth 2.1에서 제외되고 Authentication Flow(2FA)를 우회하므로 대안으로 적합하지 않습니다.</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>2안 외부 배치 흐름은 다음 장 참고</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 14. 외부 UI 시퀀스 -->
+<section class="slide" id="s14"><div class="in">
+  <div class="kicker"><b>6 · 로그인 UI 커스텀 / 외부 배치</b><span class="sep"></span>2안 PoC 흐름</div>
+  <h2>외부 React 로그인 화면에서 SAS로 인증 <span class="tb">✔ 테스트 완료</span></h2>
+  <div class="body">
+    <div class="dia p2" data-seq="extui"></div>
+  </div>
+  <div class="foot"><span>네이티브 form POST는 페이지 전체 이동이라 CORS 설정이 필요 없음 · fetch로 처리하면 CORS와 credentials, CSRF 토큰 교환이 추가로 필요</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 15. 종합 -->
+<section class="slide" id="s15"><div class="in">
+  <div class="kicker"><b>종합</b><span class="sep"></span>트레이드오프</div>
+  <h2>구현 비용과 운영 비용의 차이</h2>
+  <div class="body">
+    <div class="tw">
+    <table>
+      <thead><tr><th style="width:16%"></th><th class="p1"><span class="tag">1안 자체 JWT</span></th><th class="p2"><span class="tag">2안 SAS</span></th><th class="p3"><span class="tag">3안 Keycloak</span></th></tr></thead>
+      <tbody>
+        <tr><th>개발량</th><td>높음. 인증, 토큰, 폐기, 2FA를 모두 직접 구현</td><td>중간. Spring 확장 지점에 필요한 부분만 코드로 구현</td><td>설정 위주로 낮음. SMS OTP나 외부 회원 DB를 쓰면 SPI 개발로 증가</td></tr>
+        <tr><th>운영 부담</th><td>낮음. 기존 애플리케이션 안에 포함</td><td>중간. Spring 애플리케이션 1개 추가</td><td>높음. 별도 제품, 전용 DB, 버전 업그레이드 관리</td></tr>
+        <tr><th>표준 준수</th><td>자체 규격</td><td>OAuth 2.1 / OIDC (PKCE 기본 강제)</td><td>OAuth 2.0 / OIDC / SAML</td></tr>
+        <tr><th>회원 DB</th><td>기존 MySQL 그대로</td><td>기존 MySQL 그대로</td><td>Keycloak DB 분리 또는 SPI 연동</td></tr>
+        <tr><th>커스텀 자유도</th><td>최고</td><td>높음. 코드 수준으로 조정</td><td>중간. Theme과 SPI 범위 안에서 조정</td></tr>
+        <tr><th>관리 기능</th><td>직접 구현</td><td>직접 구현 (세션·토큰 관리 화면 없음)</td><td>Admin Console 기본 제공</td></tr>
+        <tr><th>검증 수준</th><td>문서 기준</td><td><span class="tb">✔ 6개 항목 PoC 실측 완료</span></td><td>문서 기준</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="foot"><span>PoC 중 확인한 Boot 4.1 이슈: MyBatis Starter 자동 구성 미동작(수동 빈 정의로 해결), 스타터 artifact 이름 변경</span><span class="pg"></span></div>
+</div></section>
+
+<!-- 16. 정리 -->
+<section class="slide" id="s16"><div class="in">
+  <div class="kicker"><b>정리</b><span class="sep"></span>핵심 결론과 다음 단계</div>
+  <h2>정리</h2>
+  <div class="body">
+    <div class="two" style="grid-template-columns:1.2fr 1fr">
+      <div style="display:flex;flex-direction:column;gap:.8em">
+        <ul class="list">
+          <li><b>요구 기능(2FA, 외부 로그인 UI, 강제 종료, MySQL 회원)은 1안과 2안 모두 구현할 수 있습니다.</b> 2안은 6개 항목을 모두 PoC로 확인했습니다.</li>
+          <li><b>3안은 2FA와 세션 관리 기능이 가장 풍부</b>하지만, SMS OTP, 기존 MySQL 회원 연동, 외부 로그인 UI는 확장 개발이 필요하거나 아직 검증하지 않았습니다.</li>
+          <li><b>이미 발급된 JWT를 즉시 끊을 수 없는 것은 세 안 모두 같습니다.</b> 이 한계는 제품 선택이 아니라 아키텍처(BFF 세션, 짧은 AT TTL, Introspection)로 해결합니다.</li>
+          <li>RT는 2안과 3안 모두 <b>기본이 재사용</b>입니다. 운영 환경에서는 Rotation을 켜는 것을 권장합니다.</li>
+        </ul>
+      </div>
+      <div class="callout p3" style="align-self:start"><b>남은 검증 항목</b>
+        <ul class="list" style="margin-top:.5em">
+          <li>3안: 외부 React 로그인 UI 연동 가능성 <span class="tn">테스트 필요</span></li>
+          <li>3안: SMS OTP Custom Authenticator(SPI)</li>
+          <li>3안: 기존 MySQL 회원 User Storage SPI 연동</li>
+          <li>2안·3안: Introspection 전환 시 성능 영향</li>
+          <li>1안: 이벤트유 방식의 RT 폐기와 블랙리스트 적용 범위</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>근거 자료: report.html(SAS PoC 실측 보고서), research.md(3안 조사 메모)</span><span class="pg"></span></div>
+</div></section>
+
+</main>
+<nav class="bar" aria-label="슬라이드 이동">
+  <button id="prev" type="button" aria-label="이전 슬라이드">← 이전</button>
+  <span class="count" id="count">1 / 16</span>
+  <button id="next" type="button" aria-label="다음 슬라이드">다음 →</button>
+  <span class="hint">키보드 ← → 로도 이동할 수 있습니다</span>
+</nav>
+</div>
+
+<script>
+(function(){
+  // ---------- sequence diagram renderer ----------
+  var SEQ = {
+    bff:{actors:["브라우저","Gateway (BFF)","SAS / Keycloak","Resource Server"],steps:[
+      {sep:"최초 로그인 · 토큰 발급"},
+      {f:0,t:1,l:"보호 페이지 요청"},
+      {f:1,t:0,l:"302 → /authorize (+PKCE)",r:1},
+      {f:0,t:2,l:"로그인 화면 · ID/PW (+2FA)"},
+      {n:2,l:"인증 서버 로그인 세션 생성 · 세션 쿠키 발급"},
+      {f:2,t:0,l:"302 redirect_uri?code=…",r:1},
+      {f:0,t:1,l:"Authorization Code 전달"},
+      {f:1,t:2,l:"POST /token (code + code_verifier)"},
+      {f:2,t:1,l:"Access Token + Refresh Token",r:1},
+      {n:1,l:"HttpSession ⟶ OAuth2AuthorizedClient에 보관"},
+      {f:1,t:0,l:"Set-Cookie: Gateway 세션 ID",r:1},
+      {sep:"로그인 이후 API 요청"},
+      {f:0,t:1,l:"API 요청 + 세션 쿠키"},
+      {f:1,t:3,l:"Authorization: Bearer <Access Token>"},
+      {n:3,l:"JWK 공개키로 서명·exp 로컬 검증 · scope 인가"},
+      {f:3,t:0,l:"200 응답 (Gateway 경유)",r:1,c:"ok"}
+    ]},
+    refresh:{actors:["클라이언트 / Gateway","인증 서버","RT 저장소","Resource Server"],steps:[
+      {sep:"AT 만료"},
+      {f:0,t:3,l:"API 요청 + Bearer AT"},
+      {f:3,t:0,l:"401 (exp 경과)",r:1,c:"no"},
+      {sep:"재발급"},
+      {f:0,t:1,l:"POST /token  grant_type=refresh_token"},
+      {f:1,t:2,l:"RT 조회 (stateful)"},
+      {f:2,t:1,l:"유효 · 미폐기",r:1},
+      {f:1,t:0,l:"새 AT (+ RT: 재사용 또는 Rotation 교체)",r:1,c:"ok"},
+      {f:0,t:3,l:"새 AT로 재요청"},
+      {f:3,t:0,l:"200",r:1,c:"ok"},
+      {sep:"RT도 만료되었거나 폐기된 경우"},
+      {f:0,t:1,l:"POST /token  grant_type=refresh_token"},
+      {f:1,t:0,l:"400 invalid_grant",r:1,c:"no"},
+      {n:0,l:"다시 로그인 (Authorization 요청)"}
+    ]},
+    extui:{actors:["브라우저","React 로그인 UI (:5180)","SAS (:9000)","Gateway"],steps:[
+      {f:0,t:2,l:"GET /oauth2/authorize (미인증)"},
+      {f:2,t:0,l:"302 → http://localhost:5180/login",r:1},
+      {f:0,t:1,l:"외부 로그인 화면 로드"},
+      {f:1,t:2,l:"form POST :9000/login (ID/PW)"},
+      {n:2,l:"Spring Security 1차 인증 · 세션 생성 (/login CSRF 예외)"},
+      {f:2,t:0,l:"302 → /oauth2/authorize?continue",r:1},
+      {f:0,t:2,l:"2차 OTP 제출 (/login/ott, SAS 기본 화면)"},
+      {n:2,l:"팩터 충족 → 인가 진행"},
+      {f:2,t:0,l:"302 redirect_uri?code=…",r:1},
+      {f:0,t:3,l:"Authorization Code 전달"},
+      {f:3,t:2,l:"POST /oauth2/token (code → Token 교환)"},
+      {f:2,t:3,l:"Access Token + Refresh Token",r:1,c:"ok"}
+    ]}
+  };
+  var NS="http://www.w3.org/2000/svg";
+  function el(n,a,txt){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);if(txt!=null)e.textContent=txt;return e;}
+  function tw(s,fs){var w=0;for(var i=0;i<s.length;i++){w+=/[ㄱ-힝⺀-鿿⟶→]/.test(s[i])?fs*1.02:fs*0.58;}return w;}
+  function render(host,spec){
+    var W=980,pad=100,n=spec.actors.length,gap=(W-2*pad)/(n-1);
+    var xs=spec.actors.map(function(_,i){return pad+i*gap;});
+    var svg=el("svg",{viewBox:"0 0 "+W+" 100",role:"img","aria-label":"시퀀스 다이어그램: "+spec.actors.join(", ")});
+    var g=el("g",{});var y=72,lanes=el("g",{});svg.appendChild(lanes);svg.appendChild(g);
+    spec.steps.forEach(function(s){
+      if(s.sep){y+=8;g.appendChild(el("line",{"class":"sepl",x1:12,x2:W-12,y1:y,y2:y}));
+        var t=el("text",{"class":"sept",x:16,y:y-6},s.sep);g.appendChild(t);y+=24;return;}
+      if(s.n!=null){var w=Math.min(tw(s.l,13)+24,gap*1.7),x=xs[s.n]-w/2;x=Math.max(8,Math.min(W-8-w,x));
+        var ng=el("g",{"class":"nt"});ng.appendChild(el("rect",{x:x,y:y-15,width:w,height:24,rx:3}));
+        ng.appendChild(el("text",{x:x+w/2,y:y+1.5,"text-anchor":"middle"},s.l));g.appendChild(ng);y+=36;return;}
+      var x1=xs[s.f],x2=xs[s.t],dir=x2>x1?1:-1,c=s.c?(" "+s.c):"";
+      g.appendChild(el("line",{"class":"msg"+(s.r?" ret":"")+c,x1:x1+dir*3,x2:x2-dir*4,y1:y,y2:y,"marker-end":"url(#ah"+(s.c?"-"+s.c:"")+")"}));
+      g.appendChild(el("text",{"class":"lbl"+c,x:(x1+x2)/2,y:y-6,"text-anchor":"middle"},s.l));
+      y+=29;
+    });
+    var H=y+6;
+    xs.forEach(function(x,i){
+      lanes.appendChild(el("line",{"class":"life",x1:x,x2:x,y1:44,y2:H}));
+      var a=el("g",{"class":"actor"}),bw=Math.max(tw(spec.actors[i],14)+30,130);
+      a.appendChild(el("rect",{x:x-bw/2,y:6,width:bw,height:36,rx:4}));
+      a.appendChild(el("text",{x:x,y:29,"text-anchor":"middle"},spec.actors[i]));lanes.appendChild(a);
+    });
+    svg.setAttribute("viewBox","0 0 "+W+" "+H);
+    host.appendChild(svg);
+  }
+  document.querySelectorAll("[data-seq]").forEach(function(h){render(h,SEQ[h.getAttribute("data-seq")]);});
+
+  // ---------- deck navigation ----------
+  var slides=[].slice.call(document.querySelectorAll(".slide")),N=slides.length,cur=0;
+  slides.forEach(function(s,i){var p=s.querySelector(".pg");if(p)p.textContent=(i+1)+" / "+N;});
+  var count=document.getElementById("count");
+  function show(i){cur=Math.max(0,Math.min(N-1,i));
+    slides.forEach(function(s,k){s.classList.toggle("on",k===cur);});
+    count.textContent=(cur+1)+" / "+N;
+    try{history.replaceState(null,"","#s"+(cur+1));}catch(e){}
+  }
+  document.getElementById("prev").addEventListener("click",function(){show(cur-1);});
+  document.getElementById("next").addEventListener("click",function(){show(cur+1);});
+  document.addEventListener("keydown",function(e){
+    if(e.key==="ArrowRight"||e.key==="PageDown"||e.key===" "){e.preventDefault();show(cur+1);}
+    else if(e.key==="ArrowLeft"||e.key==="PageUp"){e.preventDefault();show(cur-1);}
+    else if(e.key==="Home"){show(0);} else if(e.key==="End"){show(N-1);}
+  });
+  var m=/^#s(\d+)$/.exec(location.hash||"");
+  show(m?parseInt(m[1],10)-1:0);
+})();
+</script>
