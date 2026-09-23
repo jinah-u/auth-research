@@ -2,7 +2,7 @@
 
 - **1안 — 자체 JWT**: 인증서버를 직접 구현 (JWT 발급/검증, Refresh Token 등 전부 직접 설계)
 - **2안 — Spring Authorization Server (SAS)**: Boot 4.1 + Gateway + Resource Server 데모 환경에서 아래 6개 항목 전부 실제로 기동/테스트 완료
-- **3안 — Keycloak**: Keycloak 26.7.4 데모 환경(`keycloak/`)에서 같은 6개 항목 실측 완료 — 자동화 스크립트 77개 검증 항목 전부 통과 (상세: `keycloak/RESULTS.md`)
+- **3안 — Keycloak**: Keycloak 26.7.4 데모 환경(`keycloak/`)에서 같은 6개 항목 실측 완료 — 자동화 스크립트 89개 검증 항목 전부 통과(SMS OTP 포함) (상세: `keycloak/RESULTS.md`)
 
 ---
 
@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | **1. 인증/인가 방식** | JWT를 클라이언트가 보관하고 Bearer로 전달 | OAuth2 Code + BFF 세션 쿠키 `✓ 테스트 완료` | OAuth2 Code + BFF 세션 쿠키 `✓ 테스트 완료` |
 | **-회원 정보 MySQL** | 🟢 기존 테이블 그대로 사용 | 🟢 기존 테이블 연동 `✓ 테스트 완료` | 🟡 User Storage SPI 직접 구현으로 연동 (약 280라인) `✓ 테스트 완료` |
-| **2. 2FA 커스텀** | 🟢 전부 직접 구현 | 🟢 MFA 프레임워크 내장 `✓ 테스트 완료` | 🟢 TOTP는 설정만으로 동작, Email OTP는 SPI 구현 `✓ 테스트 완료` |
+| **2. 2FA 커스텀** | 🟢 전부 직접 구현 | 🟢 MFA 프레임워크 내장 `✓ 테스트 완료` | 🟢 TOTP는 설정만으로 동작, Email·SMS OTP는 SPI 구현 `✓ 테스트 완료` |
 | **3. refreshToken** | 🟢 정책 직접 설계 | 🟢 기본 재사용, 설정으로 Rotation `✓ 테스트 완료` | 🟢 기본은 새 RT 발급 + 이전 RT 재사용 가능, 설정으로 Rotation `✓ 테스트 완료` |
 | **4. 로그아웃/만료** | 🟢 직접 구현 (JWT는 exp까지 유효) | 🟢 세션·RT 폐기 (JWT는 exp까지 유효) `✓ 테스트 완료` | 🟢 Logout·Revoke로 세션·RT 폐기 (JWT는 exp까지 유효) `✓ 테스트 완료` |
 | **5. 강제 세션 종료** | 🟡 RT 삭제·블랙리스트 직접 구현 | 🟡 세션·RT 즉시 차단, 발급된 JWT는 차단 불가 `✓ 테스트 완료` | 🟡 Admin API/Console로 세션 종료, JWT 한계 동일 (Introspection 시 즉시 차단) `✓ 테스트 완료` |
@@ -113,6 +113,7 @@ Spring Security 7.1 공식 MFA 프레임워크로 구현) | 가능 — ✅ **테
 | TOTP / WebAuthn·Passkey | 직접 구현 | 직접 연동 구현 필요 | 기본 제공 — ✅ **테스트 완료** (TOTP: 코드 없이 required action만 지정해 등록·로그인·오입력 거부 확인, ROPC도 OTP 없으면 거부 / WebAuthn·Passkey: provider 존재만 확인) |
 | SMS OTP / Email OTP | 직접 구현 | 직접 연동 구현
 (발송 채널 커스텀 핸들러) | 기본 미제공 — ✅ **테스트 완료** (Email OTP를 Custom Authenticator SPI로 구현, 5개 파일 약 160라인. 기존 MySQL 회원으로 메일 코드 로그인 성공.
+SMS OTP도 SPI로 구현, 7개 파일 약 230라인 — Mock 문자 게이트웨이로 발송·입력·오입력 거부 확인. 전화번호는 User Profile에 `phoneNumber` 속성 선언 필요, 번호 미등록 사용자는 로그인 불가 → 번호 등록 화면은 별도 구현 필요. 실제 발송은 업체 계약·발신번호 등록·건당 비용 추가.
 단, Authenticator SPI는 Keycloak이 “internal SPI, 예고 없이 변경될 수 있음” 경고를 출력 → 버전 업그레이드 시 재검증 필요) |
 
 ---
@@ -255,7 +256,7 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | 1. 인증/인가 방식 (토큰/세션/쿠키) | ✅ 가능 (설계 수준) | ✅ 가능 · 테스트 완료 | ✅ 가능 · 테스트 완료 |
 | 1-부속. 기존 MySQL 회원정보 사용 | ✅ 가능 | ✅ 가능 · 테스트 완료 | ⚠️ SPI 직접 구현으로 가능 · 테스트 완료 (legacy 사용자는 TOTP 불가) |
-| 2. 2FA 커스텀 | ✅ 가능 (전부 직접 구현) | ✅ 가능 · 테스트 완료 | ✅ 가능 · 테스트 완료 (TOTP 설정만으로, Email OTP는 SPI 구현) |
+| 2. 2FA 커스텀 | ✅ 가능 (전부 직접 구현) | ✅ 가능 · 테스트 완료 | ✅ 가능 · 테스트 완료 (TOTP 설정만으로, Email·SMS OTP는 SPI 구현) |
 | 3. refreshToken 동작 | ✅ 가능 (설계 수준) | ✅ 가능 · 테스트 완료 | ✅ 가능 · 테스트 완료 |
 | 4. 로그아웃/토큰 만료 | ✅ 가능하나 
 JWT 즉시폐기는 ❌ 구조적 불가 | ✅ 가능 · 테스트 완료 
@@ -268,4 +269,4 @@ JWT 즉시폐기는 ❌ 구조적 불가 | ✅ 가능 · 테스트 완료
 
 - **자체 JWT**: 설계 자유도가 가장 높지만, 인증/세션/토큰 정책·강제 종료·관리 UI 등 모든 것을 직접 구현해야 하는 부담이 가장 크다.
 - **Spring Authorization Server**: Spring 생태계와 자연스럽게 통합되며, 이번 조사의 6개 항목 전부를 실제 데모로 직접 검증했다는 점이 가장 큰 강점이다. 다만 사용자 세션 관리 UI, 강제 종료 등 운영 편의 기능은 여전히 직접 구현해야 한다.
-- **Keycloak**: 관리 콘솔, 세션 관리, 2FA(TOTP/WebAuthn), Introspection 등 운영에 필요한 기능을 제품 차원에서 폭넓게 제공한다. 다만 전용 DB·별도 인프라가 필요하다. 실측 결과 기존 MySQL 연동과 Email OTP는 SPI 직접 구현(합계 약 440라인)으로 가능했지만 User Profile·읽기 전용 제약 같은 함정이 있었고, Authenticator SPI는 internal SPI라 버전마다 재검증이 필요하다. 외부 로그인 UI(SAS 방식의 외부 form POST)는 구조적으로 불가하며, Theme 커스텀(또는 Keycloakify로 React 테마 빌드)으로 대체해야 한다.
+- **Keycloak**: 관리 콘솔, 세션 관리, 2FA(TOTP/WebAuthn), Introspection 등 운영에 필요한 기능을 제품 차원에서 폭넓게 제공한다. 다만 전용 DB·별도 인프라가 필요하다. 실측 결과 기존 MySQL 연동과 Email·SMS OTP는 SPI 직접 구현(합계 약 670라인)으로 가능했지만 User Profile·읽기 전용 제약 같은 함정이 있었고, Authenticator SPI는 internal SPI라 버전마다 재검증이 필요하다. 외부 로그인 UI(SAS 방식의 외부 form POST)는 구조적으로 불가하며, Theme 커스텀(또는 Keycloakify로 React 테마 빌드)으로 대체해야 한다.

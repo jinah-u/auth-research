@@ -6,6 +6,7 @@
 //   node util.js formaction               stdin HTML의 첫 form action (HTML 엔티티 해제)
 //   node util.js totpsecret               stdin HTML(OTP 등록 화면)에서 secret 추출
 //   node util.js mailcode                 stdin MailHog 메시지 JSON에서 최근 메일의 6자리 코드
+//   node util.js smscode                  stdin Mock SMS 메시지 JSON에서 최근 문자의 6자리 코드
 const crypto = require('crypto');
 
 const [, , cmd, arg] = process.argv;
@@ -84,6 +85,13 @@ switch (cmd) {
       const m = body.match(/\b(\d{6})\b/);
       if (m) { print(m[1]); break; }
     }
+    break;
+  }
+  case 'smscode': {
+    // stdin: Mock SMS /api/messages JSON(최신순) → 가장 최근 문자의 6자리 코드
+    const [latest] = JSON.parse(readStdin());
+    const m = latest && latest.text.match(/\b(\d{6})\b/);
+    if (m) print(m[1]);
     break;
   }
   default:

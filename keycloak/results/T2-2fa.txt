@@ -7,7 +7,7 @@
   acr=1 amr=
 
 == T2-2 TOTP 등록 사용자의 다음 로그인 (틀린 코드 / 올바른 코드)
-  다음 TOTP 창까지 7초 대기...
+  다음 TOTP 창까지 8초 대기...
   [PASS] ID/PW 후 OTP 입력 화면 (=yes)
   [PASS] 틀린 코드 → OTP 화면 재표시(200) (=200)
   [PASS] 오류 메시지 표시 (=yes)
@@ -20,7 +20,7 @@
 == T2-3 Email OTP (Custom Authenticator SPI) — 기존 MySQL 회원 user 로 테스트
   flow: Cookie[ALTERNATIVE] > Kerberos[DISABLED] > Identity Provider Redirector[ALTERNATIVE] > browser-email-otp Organization[ALTERNATIVE] >   browser-email-otp Browser - Conditional Organization[CONDITIONAL] >     Condition - user configured[REQUIRED] >     Organization Identity-First Login[ALTERNATIVE] > browser-email-otp forms[ALTERNATIVE] >   Username Password Form[REQUIRED] >   Email OTP (demo)[REQUIRED] >   browser-email-otp Browser - Conditional 2FA[CONDITIONAL] >     Condition - user configured[REQUIRED] >     Condition - credential[REQUIRED] >     OTP Form[ALTERNATIVE] >     WebAuthn Authenticator[DISABLED] >     Recovery Authentication Code Form[DISABLED]
   [PASS] ID/PW 후 Email OTP 입력 화면 (=yes)
-  MailHog 수신: to=["user@legacy.local"] code=642637
+  MailHog 수신: to=["user@legacy.local"] code=846889
   [PASS] 메일로 6자리 코드 수신 (=yes)
   [PASS] 틀린 코드 → 폼 재표시(200) (=200)
   [PASS] 오류 메시지 표시 (=yes)
@@ -32,6 +32,6 @@
   [PASS] webauthn-authenticator (2FA) (=yes)
   [PASS] webauthn-authenticator-passwordless (Passkey) (=yes)
   [PASS] required action webauthn-register (=yes)
-  email/sms 계열 기본 authenticator: idp-email-verification, email-otp, reset-credential-email
+  email/sms 계열 기본 authenticator: idp-email-verification, sms-otp, email-otp, reset-credential-email
 
 결과: PASS=19 FAIL=0

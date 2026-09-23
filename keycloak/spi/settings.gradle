@@ -3,3 +3,4 @@ rootProject.name = 'keycloak-spi'
 
 include 'user-storage-mysql'
 include 'email-otp'
+include 'sms-otp'

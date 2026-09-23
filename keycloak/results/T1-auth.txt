@@ -2,14 +2,14 @@
 == T1-1 Authorization Code + PKCE 토큰 발급 (Keycloak 로컬 사용자 kcuser)
   [PASS] authorize → 로그인 폼 (=200)
   [PASS] ID/PW 제출 → redirect_uri 로 302 (=302)
-  Location: http://127.0.0.1:18080/authorized?state=s1&session_state=p48-aALz_nMTLfLPxBZR_nMY&iss=http%3A%2F%2Flocalhost%3...
+  Location: http://127.0.0.1:18080/authorized?state=s1&session_state=SvCtdhe54Dz1_TM8PJ0SwZL0&iss=http%3A%2F%2Flocalhost%3...
   Set-Cookie: KC_RESTART=<값>;Version=1;Path=/realms/demo/;Max-Age=0
   Set-Cookie: KEYCLOAK_IDENTITY=<값>;Version=1;Path=/realms/demo/;Secure;HttpOnly;SameSite=None
   Set-Cookie: KEYCLOAK_SESSION=<값>;Version=1;Path=/realms/demo/;Max-Age=36000;Secure;SameSite=None
   [PASS] access_token 발급 (=yes)
   [PASS] refresh_token 발급 (=yes)
   [PASS] id_token 발급(openid) (=yes)
-  access_token: typ=Bearer exp-iat=20s aud=resource-server sid=p48-aALz_nMTLfLPxBZR_nMY
+  access_token: typ=Bearer exp-iat=20s aud=resource-server sid=SvCtdhe54Dz1_TM8PJ0SwZL0
   token 응답: expires_in=20 refresh_expires_in=1800
 
 == T1-2 Keycloak 가 브라우저에 남기는 쿠키 (cookie jar)
@@ -20,13 +20,13 @@
 
 == T1-3 Resource Server 의 JWT 로컬 검증 (요청마다 Keycloak 조회 여부)
   [PASS] /api/hello (JWT) 5회 호출 (=200)
-{"validation":"jwt-local","message":"hello, 0f10a8e8-eed6-466f-8f47-8c3003d02b20"}
+{"validation":"jwt-local","message":"hello, a0c10e0a-2d04-4adc-9f26-2f2119e2c425"}
   호출 중 Keycloak 액세스 로그 건수: 0 (JWKS 는 최초/새 kid 일 때만 조회, 이후 캐시)
   [PASS] JWT 검증 시 Keycloak 미조회 (=0)
 
 == T1-4 기존 MySQL(sas_poc.users) 회원으로 로그인 — User Storage SPI
   [PASS] legacy user/password 로그인 → 토큰 발급 (=yes)
-  preferred_username=user sub=f:22c30477-c38c-4430-b351-4d7459fa5c40:user
+  preferred_username=user sub=f:4c31d2dd-6d81-48a8-8517-bd71f01c37ac:user
   [PASS] /api/hello 호출 (=200)
   [PASS] 틀린 비밀번호 → 로그인 폼 재표시(코드 미발급) (=200)
   [PASS] Keycloak DB(user_entity)에 legacy 사용자 행 없음(import 안 함) (=0)

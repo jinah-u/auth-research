@@ -17,6 +17,15 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  sms-mock:
+    image: node:20-alpine
+    container_name: kc-poc-sms-mock
+    command: node /app/server.js
+    volumes:
+      - ./sms-mock:/app
+    ports:
+      - "8090:8090"
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.4
     container_name: kc-poc-keycloak
@@ -34,6 +43,8 @@ services:
       LEGACY_DB_URL: jdbc:mysql://host.docker.internal:3308/sas_poc
       LEGACY_DB_USER: sas
       LEGACY_DB_PASSWORD: sas
+      # SMS OTP SPI 발송 대상 (Mock SMS 게이트웨이)
+      SMS_GATEWAY_URL: http://sms-mock:8090/send
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -45,3 +56,4 @@ services:
     depends_on:
       - keycloak-db
       - mailhog
+      - sms-mock

@@ -1,0 +1,29 @@
+
+== 준비: User Profile 에 phoneNumber 속성 선언 → kcuser 번호 등록 → SMS OTP flow 를 demo-client 에 적용
+  [PASS] kcuser phoneNumber 저장됨 (=01012345678)
+  forms 하위: browser-sms-otp Browser - Conditional Organization[CONDITIONAL] > Username Password Form[REQUIRED] > SMS OTP (demo)[REQUIRED] > browser-sms-otp Browser - Conditional 2FA[CONDITIONAL]
+
+== T7-1 ID/PW 후 문자 인증번호 입력 화면
+  [PASS] SMS OTP 입력 화면 표시 (=yes)
+  [PASS] 마스킹된 번호 표시(010-****-5678) (=yes)
+
+== T7-2 Mock SMS 게이트웨이 수신 확인
+  수신: to=01012345678 text=[demo] 로그인 인증번호 445948 (5분간 유효)
+  [PASS] 수신 번호 (=01012345678)
+  [PASS] 6자리 인증번호 수신 (=yes)
+
+== T7-3 틀린 번호 / 올바른 번호
+  [PASS] 틀린 인증번호 → 폼 재표시(200) (=200)
+  [PASS] 오류 메시지 표시 (=yes)
+  [PASS] 올바른 인증번호 → redirect_uri 로 302 (=302)
+  [PASS] 토큰 발급 (preferred_username=kcuser) (=kcuser)
+  [PASS] 발급 토큰으로 /api/hello (=200)
+
+== T7-4 전화번호가 없는 사용자(legacy MySQL 회원 user)
+  [PASS] 번호 없는 사용자는 로그인 완료 불가(302 아님) (=yes)
+  HTTP 400, 화면: We are sorry... / Cannot login, credential setup required.
+  [PASS] 문자 미발송 (=0)
+  → 번호 미등록 사용자를 위한 '번호 등록' required action 은 별도 구현 필요 (Keycloak 기본 없음)
+  (정리) client flow override 해제, browser-sms-otp flow 삭제, kcuser phoneNumber 제거
+
+결과: PASS=12 FAIL=0

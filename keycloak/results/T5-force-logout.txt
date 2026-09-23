@@ -1,6 +1,6 @@
 
 == T5-1 Admin REST API 로 특정 세션 강제 종료
-  kcuser 활성 세션: 8개 — 8yz7ywsq5Gi4kgN8o9WIzbg3 ip=172.20.0.1 clients=demo-client, BRafuxk7GEC51J0j3YVC_LWU ip=172.20.0.1 clients=demo-client, cSw82bAS9gHTRjr0GOejVuOZ ip=172.20.0.1 clients=demo-client, IHbnYIGDxDlidUTPiaJDVb0x ip=172.20.0.1 clients=demo-client, LNeIjf8W59xrcqVpPcdsEgaO ip=172.20.0.1 clients=demo-client, p48-aALz_nMTLfLPxBZR_nMY ip=172.20.0.1 clients=demo-client, qNYSJ_LkaFBsf0Wg-t3c91xg ip=172.20.0.1 clients=demo-client, r_lIQo4BTcYCMFShqsm6IyJJ ip=172.20.0.1 clients=demo-client
+  kcuser 활성 세션: 8개 — 0QqtUWwOT8JWTCpppqC_OOIR ip=172.20.0.1 clients=demo-client, 1TIZ0SXBVw_PiHGagwx18MA_ ip=172.20.0.1 clients=demo-client, eV-Vtws2gy7vGsKgde7d2IcB ip=172.20.0.1 clients=demo-client, jm1hucDkgz0ec4tKaDqDGfJx ip=172.20.0.1 clients=demo-client, lJChA3yCTASnNEyumgqxx_IX ip=172.20.0.1 clients=demo-client, lXNy38a0EvyiLDRC5qMHV4ZQ ip=172.20.0.1 clients=demo-client, SvCtdhe54Dz1_TM8PJ0SwZL0 ip=172.20.0.1 clients=demo-client, y82eA65NscExtyE9r2Z7353S ip=172.20.0.1 clients=demo-client
   [PASS] 강제 종료 전: authorize → 302 (=302)
   [PASS] 강제 종료 전: /intro/hello (=200)
   [PASS] DELETE /admin/realms/demo/sessions/{sid} (=204)
@@ -20,10 +20,10 @@
   [PASS] kcuser 세션 A → 로그인 폼 (=200)
   [PASS] kcuser 세션 B → 로그인 폼 (=200)
   [PASS] 다른 사용자(legacy user) 세션은 유지 → 302 (=302)
-  realm 전체 활성 세션(클라이언트별): [{"offline":"0","clientId":"demo-client","active":"3","id":"00814f75-ad41-42e3-aee0-b4520594ad7e"}]
+  realm 전체 활성 세션(클라이언트별): [{"offline":"0","clientId":"demo-client","active":"3","id":"f0815c5d-cfeb-43d8-969a-9415896cb0e9"}]
   [PASS] POST /logout-all (Realm 전체 세션 종료 + notBefore 갱신) (=200)
   [PASS] legacy user 세션 → 로그인 폼 (=200)
   logout-all 이후 기존 access_token: /api=200 /intro=401
-  realm notBefore: 1790136155
+  realm notBefore: 1790139180
 
 결과: PASS=14 FAIL=0

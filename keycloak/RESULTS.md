@@ -3,7 +3,7 @@
 `report/report_md.md` 의 6개 비교 항목을 Keycloak 으로 실제 기동해 검증한 결과. SAS 데모와 같은 조건(클라이언트 `demo-client`, Access Token 20초, 기존 MySQL `sas_poc.users`)으로 맞췄다.
 
 - 실행일: 2026-09-23 / Keycloak **26.7.4** (`start-dev`, 전용 PostgreSQL) / Spring Boot 4.1.1 Resource Server
-- 전체 결과: **77개 검증 항목 전부 PASS** — 원문은 [`results/`](results/) (T1~T6 각 txt)
+- 전체 결과: **89개 검증 항목 전부 PASS** — 원문은 [`results/`](results/) (T1~T7 각 txt)
 
 | 테스트 | 결과 | 원문 |
 |---|---|---|
@@ -13,14 +13,16 @@
 | T4 로그아웃 / 토큰 만료 | 11/11 | [T4-logout.txt](results/T4-logout.txt) |
 | T5 세션 강제 종료 + Introspection | 14/14 | [T5-force-logout.txt](results/T5-force-logout.txt) |
 | T6 로그인 UI 커스텀 / 외부 배치 | 10/10 | [T6-login-ui.txt](results/T6-login-ui.txt) |
+| T7 2FA — SMS(문자) OTP | 12/12 | [T7-sms-otp.txt](results/T7-sms-otp.txt) |
 
 ## 구성
 
 ```
 keycloak/
-  docker-compose.yml     keycloak(:8180) + 전용 postgres(:5433) + mailhog(:8025)
+  docker-compose.yml     keycloak(:8180) + 전용 postgres(:5433) + mailhog(:8025) + sms-mock(:8090)
   realm/demo-realm.json  realm·클라이언트·사용자·SMTP·User Storage 컴포넌트 (자동 import)
-  spi/                   User Storage SPI(기존 MySQL) + Email OTP Authenticator SPI (독립 Gradle 빌드)
+  spi/                   User Storage SPI(기존 MySQL) + Email OTP / SMS OTP Authenticator SPI (독립 Gradle 빌드)
+  sms-mock/              Mock SMS 게이트웨이 (받은 문자를 화면·API로 보여줌, 실제 발송 없음)
   resource-server/       /api/** = JWT 로컬 검증, /intro/** = Introspection (:18082)
   theme/demo-login/      로그인 테마 커스텀 (keycloak.v2 상속, 문구·CSS)
   frontend/              외부 React 로그인 UI 수동 확인용 (:5181)
@@ -34,8 +36,10 @@ docker compose -p sas-poc up -d            # 루트: 기존 MySQL(:3308) — 한
 cd keycloak/spi && ./gradlew providers     # SPI JAR → spi/build/providers
 cd .. && docker compose up -d              # Keycloak
 cd resource-server && ./gradlew bootRun    # JDK 21
-bash scripts/run-all.sh                    # realm 초기화 + T1~T6, 결과는 results/
+bash scripts/run-all.sh                    # realm 초기화 + T1~T7, 결과는 results/
 ```
+
+SMS OTP 브라우저 수동 테스트: `bash scripts/T7-sms-otp.sh --keep` → http://localhost:8180/realms/demo/account 에 `kcuser`/`password` 로그인 → http://localhost:8090 수신함에서 인증번호 확인 후 입력 → 끝나면 `bash scripts/reset.sh`.
 
 ## 항목별 결과
 
@@ -66,6 +70,13 @@ bash scripts/run-all.sh                    # realm 초기화 + T1~T6, 결과는 
 - **Email OTP**: Keycloak 기본 제공 authenticator 가 없다(기본 제공은 `idp-email-verification`, `reset-credential-email` 뿐). Custom Authenticator SPI 로 구현했다(`email-otp`, 5개 파일 약 160라인, FTL 폼 포함).
   - browser flow 를 복사해 Email OTP 단계를 추가하고 `demo-client` 에만 flow override 로 적용 → 기존 MySQL 회원 `user` 로 ID/PW → 메일 수신(MailHog) → 코드 입력 → 토큰 발급. 틀린 코드는 거부.
   - 기동 로그 경고: `email-otp ... is implementing the internal SPI authenticator. This SPI is internal and may change without notice` → Authenticator SPI 는 공식 지원 대상이 아니라 버전을 올릴 때마다 호환성을 확인해야 한다.
+- **SMS(문자) OTP (T7)**: 기본 제공이 없어 Custom Authenticator SPI(`sms-otp`)로 구현했다(7개 파일, 약 230라인). 발송은 Mock SMS 게이트웨이(`sms-mock`, :8090)로 한다.
+  - 발송 부분은 `SmsSender` 인터페이스로 분리했다. 실제 업체(NHN Cloud, Naver SENS, Twilio 등)를 쓰려면 이 구현체만 바꾸면 된다.
+  - 전화번호는 사용자 속성 `phoneNumber` 를 쓴다. Keycloak 26 은 **User Profile 에 선언하지 않은 속성을 저장하지 않으므로** `phoneNumber` 속성을 먼저 선언해야 한다(Admin API `PUT /users/profile`).
+  - kcuser 로 ID/PW 를 입력하면 마스킹된 번호(`010-****-5678`)와 함께 입력 화면이 뜨고, Mock 수신함에 문자가 도착한다. 틀린 번호는 거부되고, 올바른 번호를 넣으면 토큰이 발급된다.
+  - 번호가 없는 사용자(legacy `user`)는 400 "Cannot login, credential setup required." 로 로그인이 막힌다. 번호를 등록하는 required action(입력 + 인증)은 Keycloak 에 없어 따로 구현해야 한다.
+  - 기동 시 Email OTP 와 똑같은 internal SPI 경고가 뜬다.
+  - 실제 운영에 필요한 추가 작업: 업체 계약과 발신번호 사전 등록, 건당 비용, 재전송 버튼, 발송 횟수 제한(비용 공격 방지), 번호 등록·변경 required action, 국제번호 형식 처리.
 - **WebAuthn / Passkey**: `webauthn-authenticator`, `webauthn-authenticator-passwordless`, `webauthn-register` 모두 기본 제공(존재만 확인, 실제 등록은 브라우저가 필요해 미실시).
 
 ### 3. refreshToken (T3)
@@ -115,7 +126,7 @@ bash scripts/run-all.sh                    # realm 초기화 + T1~T6, 결과는 
 | 항목 | 이전(문서 기준) | 실측 결과 |
 |---|---|---|
 | 1-부속 기존 MySQL | SPI 개발 필요 | ✅ SPI 로 가능 · 테스트 완료 (약 280라인 + User Profile/ReadOnly 함정, legacy 사용자는 TOTP 불가) |
-| 2. 2FA | TOTP/WebAuthn 기본, SMS/Email 은 SPI | ✅ TOTP 설정만으로 동작 · Email OTP SPI 구현 완료 (internal SPI 경고) |
+| 2. 2FA | TOTP/WebAuthn 기본, SMS/Email 은 SPI | ✅ TOTP 설정만으로 동작 · Email OTP / SMS OTP(Mock 발송) SPI 구현 완료 (internal SPI 경고) |
 | 3. refresh | 설정에 따라 rotation | ✅ 기본은 새 토큰 발급 + 이전 토큰 재사용 가능, rotation 설정 시 재사용 감지 |
 | 4. 로그아웃 | 문서 기준 | ✅ 세션·refresh 즉시 무효, JWT access token 은 계속 통과 |
 | 5. 강제 종료 | 문서 기준 | ✅ Admin API 로 세션/사용자/Realm 단위 종료 · Introspection 즉시 차단 실측 |
