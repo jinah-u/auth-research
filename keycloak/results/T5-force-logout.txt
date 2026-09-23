@@ -1,0 +1,29 @@
+
+== T5-1 Admin REST API 로 특정 세션 강제 종료
+  kcuser 활성 세션: 8개 — 8yz7ywsq5Gi4kgN8o9WIzbg3 ip=172.20.0.1 clients=demo-client, BRafuxk7GEC51J0j3YVC_LWU ip=172.20.0.1 clients=demo-client, cSw82bAS9gHTRjr0GOejVuOZ ip=172.20.0.1 clients=demo-client, IHbnYIGDxDlidUTPiaJDVb0x ip=172.20.0.1 clients=demo-client, LNeIjf8W59xrcqVpPcdsEgaO ip=172.20.0.1 clients=demo-client, p48-aALz_nMTLfLPxBZR_nMY ip=172.20.0.1 clients=demo-client, qNYSJ_LkaFBsf0Wg-t3c91xg ip=172.20.0.1 clients=demo-client, r_lIQo4BTcYCMFShqsm6IyJJ ip=172.20.0.1 clients=demo-client
+  [PASS] 강제 종료 전: authorize → 302 (=302)
+  [PASS] 강제 종료 전: /intro/hello (=200)
+  [PASS] DELETE /admin/realms/demo/sessions/{sid} (=204)
+  [PASS] 강제 종료 후: 같은 쿠키 authorize → 200(로그인 폼) (=200)
+
+== T5-2 강제 종료 후 refresh_token / access_token (JWT 로컬 검증)
+  [PASS] refresh → invalid_grant (=invalid_grant)
+  [PASS] /api/hello (JWT) → 여전히 200 (구조적 한계) (=200)
+
+== T5-3 같은 access_token 을 Introspection 으로 검증
+  [PASS] /intro/hello → 401 (즉시 차단) (=401)
+  [PASS] introspect 응답 active (=false)
+
+== T5-4 사용자 단위 / Realm 전체 강제 로그아웃
+  kcuser 세션 수: 9
+  [PASS] POST /users/{id}/logout (사용자의 모든 세션 종료) (=204)
+  [PASS] kcuser 세션 A → 로그인 폼 (=200)
+  [PASS] kcuser 세션 B → 로그인 폼 (=200)
+  [PASS] 다른 사용자(legacy user) 세션은 유지 → 302 (=302)
+  realm 전체 활성 세션(클라이언트별): [{"offline":"0","clientId":"demo-client","active":"3","id":"00814f75-ad41-42e3-aee0-b4520594ad7e"}]
+  [PASS] POST /logout-all (Realm 전체 세션 종료 + notBefore 갱신) (=200)
+  [PASS] legacy user 세션 → 로그인 폼 (=200)
+  logout-all 이후 기존 access_token: /api=200 /intro=401
+  realm notBefore: 1790136155
+
+결과: PASS=14 FAIL=0

@@ -1,0 +1,37 @@
+
+== T2-1 TOTP: kcuser 에 CONFIGURE_TOTP required action 지정 (Admin 설정만, 코드 없음)
+  [PASS] ID/PW 후 OTP 등록 화면 표시 (=yes)
+  [PASS] 계산한 TOTP 로 등록 → redirect_uri 로 302 (=302)
+  [PASS] 등록과 함께 로그인 완료(토큰 발급) (=yes)
+  [PASS] kcuser credential 에 otp 추가됨 (=yes)
+  acr=1 amr=
+
+== T2-2 TOTP 등록 사용자의 다음 로그인 (틀린 코드 / 올바른 코드)
+  다음 TOTP 창까지 7초 대기...
+  [PASS] ID/PW 후 OTP 입력 화면 (=yes)
+  [PASS] 틀린 코드 → OTP 화면 재표시(200) (=200)
+  [PASS] 오류 메시지 표시 (=yes)
+  [PASS] 올바른 코드 → 302 (=302)
+  [PASS] 토큰 발급 (=yes)
+  [PASS] Direct Grant(ROPC)에서도 OTP 없으면 거부 (=invalid_grant)
+  error_description: Invalid user credentials
+  (정리) kcuser OTP credential 삭제
+
+== T2-3 Email OTP (Custom Authenticator SPI) — 기존 MySQL 회원 user 로 테스트
+  flow: Cookie[ALTERNATIVE] > Kerberos[DISABLED] > Identity Provider Redirector[ALTERNATIVE] > browser-email-otp Organization[ALTERNATIVE] >   browser-email-otp Browser - Conditional Organization[CONDITIONAL] >     Condition - user configured[REQUIRED] >     Organization Identity-First Login[ALTERNATIVE] > browser-email-otp forms[ALTERNATIVE] >   Username Password Form[REQUIRED] >   Email OTP (demo)[REQUIRED] >   browser-email-otp Browser - Conditional 2FA[CONDITIONAL] >     Condition - user configured[REQUIRED] >     Condition - credential[REQUIRED] >     OTP Form[ALTERNATIVE] >     WebAuthn Authenticator[DISABLED] >     Recovery Authentication Code Form[DISABLED]
+  [PASS] ID/PW 후 Email OTP 입력 화면 (=yes)
+  MailHog 수신: to=["user@legacy.local"] code=642637
+  [PASS] 메일로 6자리 코드 수신 (=yes)
+  [PASS] 틀린 코드 → 폼 재표시(200) (=200)
+  [PASS] 오류 메시지 표시 (=yes)
+  [PASS] 올바른 코드 → 302 (=302)
+  [PASS] 토큰 발급 (preferred_username=user) (=user)
+  (정리) client flow override 해제, browser-email-otp flow 삭제
+
+== T2-4 WebAuthn / Passkey 기본 제공 여부 (Admin API 로 provider 존재만 확인, 실제 등록은 브라우저 필요)
+  [PASS] webauthn-authenticator (2FA) (=yes)
+  [PASS] webauthn-authenticator-passwordless (Passkey) (=yes)
+  [PASS] required action webauthn-register (=yes)
+  email/sms 계열 기본 authenticator: idp-email-verification, email-otp, reset-credential-email
+
+결과: PASS=19 FAIL=0

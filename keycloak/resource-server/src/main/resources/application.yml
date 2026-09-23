@@ -1,0 +1,21 @@
+server:
+  port: 18082
+
+spring:
+  application:
+    name: kc-resource-server
+  security:
+    oauth2:
+      resourceserver:
+        # /api/**   : JWT 로컬 검증 (JWKS 공개키, 요청마다 Keycloak 조회 없음)
+        jwt:
+          issuer-uri: http://localhost:8180/realms/demo
+        # /intro/** : 요청마다 Keycloak Introspection 조회 (세션 종료·revoke 즉시 반영)
+        opaquetoken:
+          introspection-uri: http://localhost:8180/realms/demo/protocol/openid-connect/token/introspect
+          client-id: resource-server
+          client-secret: rs-secret
+
+logging:
+  level:
+    org.springframework.security: DEBUG

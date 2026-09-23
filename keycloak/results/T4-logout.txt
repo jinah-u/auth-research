@@ -1,0 +1,25 @@
+
+== T4-1 RP-Initiated Logout 후 같은 쿠키로 다시 authorize
+  [PASS] 로그아웃 전: 같은 쿠키로 authorize → 302(SSO로 바로 code 발급) (=302)
+  [PASS] logout endpoint → post_logout_redirect_uri 로 302 (=302)
+  [PASS] 로그아웃 후: 같은 쿠키로 authorize → 200(로그인 폼) (=200)
+
+== T4-2 로그아웃 후 refresh_token
+  [PASS] refresh → invalid_grant (=invalid_grant)
+  error_description: Session not active
+
+== T4-3 로그아웃 후 이미 발급된 access_token
+  [PASS] /api/hello (JWT 로컬 검증) → 여전히 200 (=200)
+  [PASS] /intro/hello (Introspection) → 401 (=401)
+
+== T4-4 Revocation Endpoint (/revoke)
+  [PASS] refresh_token revoke (=200)
+  [PASS] revoke 한 refresh_token 사용 → invalid_grant (=invalid_grant)
+  refresh_token revoke 후 access_token: /api=200 /intro=401
+  refresh_token revoke 후 SSO 세션(authorize): 200 (302=세션 유지, 200=세션 종료)
+  [PASS] access_token revoke (=200)
+  [PASS] revoke 한 access_token → /api/hello (JWT) 여전히 200 (=200)
+  [PASS] revoke 한 access_token → /intro/hello 401 (=401)
+  access_token revoke 후 refresh_token: 재발급 성공
+
+결과: PASS=11 FAIL=0

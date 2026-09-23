@@ -27,3 +27,6 @@ dist/
 ### Local ###
 .idea/
 .claude/
+
+### Keycloak 테스트 임시 파일 ###
+keycloak/scripts/.work/

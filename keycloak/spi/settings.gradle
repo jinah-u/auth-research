@@ -1,0 +1,5 @@
+// Keycloak 확장(SPI) 전용 독립 빌드 — 루트 SAS 데모 빌드와 분리
+rootProject.name = 'keycloak-spi'
+
+include 'user-storage-mysql'
+include 'email-otp'

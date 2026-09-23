@@ -1,0 +1,55 @@
+subprojects {
+	apply plugin: 'java'
+
+	group = 'com.example.keycloak'
+	version = '0.0.1'
+
+	tasks.withType(JavaCompile).configureEach {
+		options.encoding = 'UTF-8'
+	}
+
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(21)
+		}
+	}
+
+	repositories {
+		mavenCentral()
+	}
+
+	ext {
+		keycloakVersion = '26.7.4'
+	}
+
+	dependencies {
+		// Keycloak 런타임이 제공 → JAR에 포함하지 않음
+		compileOnly "org.keycloak:keycloak-core:${keycloakVersion}"
+		compileOnly "org.keycloak:keycloak-server-spi:${keycloakVersion}"
+		compileOnly "org.keycloak:keycloak-server-spi-private:${keycloakVersion}"
+		compileOnly "org.keycloak:keycloak-services:${keycloakVersion}"
+		compileOnly "org.keycloak:keycloak-model-storage:${keycloakVersion}"
+		compileOnly 'org.jboss.logging:jboss-logging:3.6.1.Final'
+	}
+}
+
+// 빌드 결과 JAR + 런타임 의존 JAR을 build/providers 로 모음 → Keycloak /opt/keycloak/providers 에 마운트
+configurations {
+	providerRuntime
+}
+
+dependencies {
+	providerRuntime 'com.mysql:mysql-connector-j:9.4.0'
+	providerRuntime 'org.mindrot:jbcrypt:0.4'
+}
+
+tasks.register('providers', Copy) {
+	dependsOn subprojects.collect { it.tasks.named('jar') }
+	from subprojects.collect { it.tasks.named('jar') }
+	from configurations.providerRuntime
+	into layout.buildDirectory.dir('providers')
+}
+
+repositories {
+	mavenCentral()
+}

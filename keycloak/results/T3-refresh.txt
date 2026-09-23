@@ -1,0 +1,25 @@
+
+== T3-1 grant_type=refresh_token 재발급
+  [PASS] 재발급 성공(access_token 존재) (=yes)
+  [PASS] 새 access_token 은 이전과 다름 (=yes)
+
+== T3-2 기본값(revokeRefreshToken=false): 응답 refresh_token 과 이전 refresh_token 재사용
+  [PASS] 응답에 새 refresh_token 포함(값이 바뀜) (=yes)
+  [PASS] 이전 refresh_token(RT0) 재사용 → 여전히 성공 (=yes)
+  [PASS] RT0 3번째 사용도 성공 (재사용 제한 없음) (=yes)
+
+== T3-3 rotation ON (revokeRefreshToken=true, refreshTokenMaxReuse=0)
+  [PASS] RT0 → 재발급 성공, RT1 수령 (=yes)
+  [PASS] RT0 재사용 → invalid_grant (=invalid_grant)
+  error_description: Maximum allowed refresh token reuse exceeded
+  [PASS] 재사용 감지 후 정상 토큰 RT1 도 거부 (=invalid_grant)
+  error_description: Session doesn't have required client
+  이때 SSO 세션(authorize): 302 (302=세션 유지, 200=세션 종료)
+
+== T3-4 Access Token 만료(20s + Spring 기본 clock skew 60s) → 401 → refresh 로 복구
+  [PASS] 발급 직후 /api/hello (=200)
+  82초 대기...
+  [PASS] 만료 후 /api/hello (=401)
+  [PASS] refresh 로 새 토큰 → /api/hello (=200)
+
+결과: PASS=11 FAIL=0

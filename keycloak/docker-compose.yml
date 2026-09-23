@@ -1,0 +1,47 @@
+# Keycloak 실측 환경. 기존 SAS 데모의 MySQL(sas-poc-mysql, :3308)은 루트 docker-compose.yml로 따로 띄운다.
+services:
+  keycloak-db:
+    image: postgres:16
+    container_name: kc-poc-postgres
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    ports:
+      - "5433:5432"
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: kc-poc-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    container_name: kc-poc-keycloak
+    command: start-dev --import-realm --http-port=8180
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HOSTNAME: http://localhost:8180
+      KC_HTTP_ACCESS_LOG_ENABLED: "true"
+      # User Storage SPI가 조회할 기존 회원 DB (SAS 데모의 MySQL)
+      LEGACY_DB_URL: jdbc:mysql://host.docker.internal:3308/sas_poc
+      LEGACY_DB_USER: sas
+      LEGACY_DB_PASSWORD: sas
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./realm:/opt/keycloak/data/import
+      - ./spi/build/providers:/opt/keycloak/providers
+      - ./theme/demo-login:/opt/keycloak/themes/demo-login
+    depends_on:
+      - keycloak-db
+      - mailhog

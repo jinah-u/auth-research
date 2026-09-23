@@ -1,0 +1,9 @@
+/* demo-login 테마 커스텀 CSS (T6-1) */
+.pf-v5-c-login__main-header h1,
+#kc-page-title {
+  color: #0b5cad;
+}
+
+.pf-v5-c-login__main {
+  border-top: 6px solid #0b5cad;
+}

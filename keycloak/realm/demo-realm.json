@@ -1,0 +1,83 @@
+{
+  "realm": "demo",
+  "enabled": true,
+  "accessTokenLifespan": 20,
+  "revokeRefreshToken": false,
+  "refreshTokenMaxReuse": 0,
+  "bruteForceProtected": false,
+  "smtpServer": {
+    "host": "mailhog",
+    "port": "1025",
+    "from": "noreply@demo.local",
+    "fromDisplayName": "Keycloak Demo"
+  },
+  "clients": [
+    {
+      "clientId": "demo-client",
+      "name": "demo-client (SAS 데모와 동일 설정)",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:18080/authorized"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1:18080/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-resource-server",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "resource-server",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "resource-server",
+      "name": "resource-server (Introspection 호출용)",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "rs-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "kcuser",
+      "email": "kcuser@demo.local",
+      "emailVerified": true,
+      "firstName": "Keycloak",
+      "lastName": "User",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "password", "temporary": false }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "name": "legacy-mysql",
+        "providerId": "legacy-mysql",
+        "subComponents": {},
+        "config": {
+          "enabled": ["true"],
+          "priority": ["0"],
+          "cachePolicy": ["NO_CACHE"]
+        }
+      }
+    ]
+  }
+}

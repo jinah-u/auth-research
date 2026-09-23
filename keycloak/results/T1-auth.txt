@@ -1,0 +1,40 @@
+
+== T1-1 Authorization Code + PKCE 토큰 발급 (Keycloak 로컬 사용자 kcuser)
+  [PASS] authorize → 로그인 폼 (=200)
+  [PASS] ID/PW 제출 → redirect_uri 로 302 (=302)
+  Location: http://127.0.0.1:18080/authorized?state=s1&session_state=p48-aALz_nMTLfLPxBZR_nMY&iss=http%3A%2F%2Flocalhost%3...
+  Set-Cookie: KC_RESTART=<값>;Version=1;Path=/realms/demo/;Max-Age=0
+  Set-Cookie: KEYCLOAK_IDENTITY=<값>;Version=1;Path=/realms/demo/;Secure;HttpOnly;SameSite=None
+  Set-Cookie: KEYCLOAK_SESSION=<값>;Version=1;Path=/realms/demo/;Max-Age=36000;Secure;SameSite=None
+  [PASS] access_token 발급 (=yes)
+  [PASS] refresh_token 발급 (=yes)
+  [PASS] id_token 발급(openid) (=yes)
+  access_token: typ=Bearer exp-iat=20s aud=resource-server sid=p48-aALz_nMTLfLPxBZR_nMY
+  token 응답: expires_in=20 refresh_expires_in=1800
+
+== T1-2 Keycloak 가 브라우저에 남기는 쿠키 (cookie jar)
+  KEYCLOAK_SESSION  (path=/realms/demo/, secure=TRUE, httpOnly=N)
+  KEYCLOAK_IDENTITY  (path=/realms/demo/, secure=TRUE, httpOnly=Y)
+  AUTH_SESSION_ID  (path=/realms/demo/, secure=TRUE, httpOnly=Y)
+  KC_AUTH_SESSION_HASH  (path=/realms/demo/, secure=TRUE, httpOnly=N)
+
+== T1-3 Resource Server 의 JWT 로컬 검증 (요청마다 Keycloak 조회 여부)
+  [PASS] /api/hello (JWT) 5회 호출 (=200)
+{"validation":"jwt-local","message":"hello, 0f10a8e8-eed6-466f-8f47-8c3003d02b20"}
+  호출 중 Keycloak 액세스 로그 건수: 0 (JWKS 는 최초/새 kid 일 때만 조회, 이후 캐시)
+  [PASS] JWT 검증 시 Keycloak 미조회 (=0)
+
+== T1-4 기존 MySQL(sas_poc.users) 회원으로 로그인 — User Storage SPI
+  [PASS] legacy user/password 로그인 → 토큰 발급 (=yes)
+  preferred_username=user sub=f:22c30477-c38c-4430-b351-4d7459fa5c40:user
+  [PASS] /api/hello 호출 (=200)
+  [PASS] 틀린 비밀번호 → 로그인 폼 재표시(코드 미발급) (=200)
+  [PASS] Keycloak DB(user_entity)에 legacy 사용자 행 없음(import 안 함) (=0)
+  [PASS] Keycloak DB(credential)에 legacy 비밀번호 없음 (=0)
+  admin 검색 결과: kcuser(federationLink=N), user(federationLink=Y)
+
+== T1-5 SPI 개발 분량
+  user-storage-mysql: Java 5 파일, 비어있지 않은 라인 282
+  배포: ./gradlew providers → build/providers/*.jar (SPI + mysql-connector-j + jbcrypt) → /opt/keycloak/providers 마운트 → 재기동
+
+결과: PASS=12 FAIL=0
